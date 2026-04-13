@@ -45,11 +45,11 @@ npm run build
 npm run start
 ```
 
-For production hosting (e.g. Railway), prefer **`next start`** without a fixed `-p` so the platform’s **`PORT`** is respected; update the `start` script when you wire up deploy.
+For production hosting on **Railway** or another Node host, use **`npm run build`** followed by **`npm run start`** so the platform-provided **`PORT`** is respected.
 
 ## Project structure
 
-```
+```text
 slate-editor/
 |-- app/                    # Next.js App Router (UI, API routes)
 |-- components/             # React components
@@ -64,26 +64,18 @@ slate-editor/
 
 ## Available scripts
 
-| Script        | Description                                      |
-|---------------|--------------------------------------------------|
-| `npm run dev` | Development server (`next dev`, port 3001)       |
-| `npm run build` | Production build (`next build`)                |
-| `npm run start` | Production server (`next start`)             |
-| `npm run lint` | ESLint                                          |
-| `npm run format` | Prettier write                                |
-| `npm run checkfmt` | Prettier check                                |
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Development server (`next dev`, port 3001) |
+| `npm run build` | Production build (`next build`) |
+| `npm run start` | Production server (`next start`) |
+| `npm run lint` | ESLint |
+| `npm run format` | Prettier write |
+| `npm run checkfmt` | Prettier check |
 
 ## Deployment
 
-### Current production (legacy Vercel)
-
-The app was originally deployed from the monorepo as its own Vercel project with root directory `apps/newsletter-editor`:
-
-**https://wsu-mail-editor-newsletter-editor.vercel.app/**
-
-### This repository
-
-Deploy from **this** repo with **repository root** as the app root (no `apps/...` path). Target platform: **Railway** (or any Node host that runs `npm run build` and `npm run start` with `PORT` set).
+Deploy from **this** repo with **repository root** as the app root. Target platform: **Railway** or any Node host that runs `npm run build` and `npm run start` with `PORT` set.
 
 ## Related WSU Graduate School tools
 
@@ -95,7 +87,7 @@ Other tools still live in the monorepo ([WSU-Mail-Editor](https://github.com/gcr
 | Org Chart Editor | Org chart builder and exporter |
 | Export Translation | Outcomes translation tables |
 | Validate | Static validator (HTML/JS) |
-| Factsheet | WordPress WXR → HTML |
+| Factsheet | WordPress WXR -> HTML |
 
 Live URLs for those apps are listed in the [monorepo README](https://github.com/gcrouch-wsu/WSU-Mail-Editor/blob/main/README.md).
 
