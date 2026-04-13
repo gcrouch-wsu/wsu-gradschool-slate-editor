@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useId, useRef } from 'react'
 import { Edit } from 'lucide-react'
 
 interface PromptModalProps {
@@ -30,6 +30,9 @@ export default function PromptModal({
 }: PromptModalProps) {
   const [value, setValue] = useState(defaultValue)
   const inputRef = useRef<HTMLInputElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  const descId = useId()
 
   useEffect(() => {
     if (isOpen) {
@@ -41,6 +44,37 @@ export default function PromptModal({
       }, 100)
     }
   }, [isOpen, defaultValue])
+
+  // Focus trap and focus restoration
+  useEffect(() => {
+    if (!isOpen) return
+    const previouslyFocused = document.activeElement as HTMLElement
+    const modalEl = modalRef.current
+    if (!modalEl) return
+    const getFocusable = () =>
+      modalEl.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      const elements = getFocusable()
+      if (elements.length === 0) return
+      const first = elements[0]
+      const last = elements[elements.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus()
+    }
+  }, [isOpen])
 
   const handleConfirm = () => {
     if (value.trim()) {
@@ -66,17 +100,24 @@ export default function PromptModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-md w-full shadow-xl">
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descId}
+        className="bg-white rounded-lg max-w-md w-full shadow-xl"
+      >
         <div className="p-6">
           <div className="flex items-start gap-4">
             <div className="flex-shrink-0 text-wsu-crimson">
               <Edit className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-wsu-text-dark mb-2">
+              <h3 id={titleId} className="text-lg font-semibold text-wsu-text-dark mb-2">
                 {title}
               </h3>
-              <p className="text-sm text-wsu-text-body mb-4">{message}</p>
+              <p id={descId} className="text-sm text-wsu-text-body mb-4">{message}</p>
               <input
                 ref={inputRef}
                 type="text"

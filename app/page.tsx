@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import { useEffect, useId, useState, useRef, useMemo, useCallback } from 'react'
 import { useNewsletterState } from './hooks/useNewsletterState'
 import { usePreview } from './hooks/usePreview'
 import PreviewPanel from '@/components/PreviewPanel'
@@ -49,6 +49,7 @@ export default function EditorPage() {
   const hasLoadedInitialPreview = useRef(false)
   const previousTemplateRef = useRef<'ff' | 'briefing' | 'letter' | null>(null)
   const previousStateTemplateRef = useRef<string | null>(null)
+  const validationTitleId = useId()
 
   // Create a stable default model - memoize it so it doesn't change on every render
   const defaultModel = useMemo(() => defaultFFModel(), [])
@@ -368,17 +369,24 @@ export default function EditorPage() {
     }
   }
 
-  // Close menu when clicking outside
+  // Close menu when clicking outside or pressing Escape
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowMenu(false)
       }
     }
+    const handleMenuKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowMenu(false)
+    }
 
     if (showMenu) {
       document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
+      document.addEventListener('keydown', handleMenuKeyDown)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+        document.removeEventListener('keydown', handleMenuKeyDown)
+      }
     }
   }, [showMenu])
 
@@ -406,7 +414,7 @@ export default function EditorPage() {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top Bar */}
-      <header className="flex justify-between items-center px-4 py-3 bg-white border-b border-wsu-border-light sticky top-0 z-50">
+      <header aria-label="Editor toolbar" className="flex justify-between items-center px-4 py-3 bg-white border-b border-wsu-border-light sticky top-0 z-50">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-wsu-crimson">
             WSU Newsletter Editor
@@ -444,17 +452,20 @@ export default function EditorPage() {
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setShowMenu(!showMenu)}
+              aria-haspopup="true"
+              aria-expanded={showMenu}
+              aria-label="More actions"
               className="px-3 py-1.5 text-sm font-medium text-wsu-text-body bg-white border border-wsu-border-light rounded-md hover:bg-wsu-bg-light transition-colors flex items-center gap-1"
-              title="More actions"
             >
               <Menu className="w-4 h-4" />
               <ChevronDown className={`w-3 h-3 transition-transform ${showMenu ? 'rotate-180' : ''}`} />
             </button>
             
             {showMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white border border-wsu-border-light rounded-md shadow-lg z-50">
+              <div aria-label="Actions" className="absolute right-0 mt-2 w-48 bg-white border border-wsu-border-light rounded-md shadow-lg z-50">
                 <div className="py-1">
                   <button
+
                     onClick={() => {
                       fileInputRef.current?.click()
                       setShowMenu(false)
@@ -465,6 +476,7 @@ export default function EditorPage() {
                     Import HTML
                   </button>
                   <button
+
                     onClick={() => {
                       handleExport()
                       setShowMenu(false)
@@ -475,6 +487,7 @@ export default function EditorPage() {
                     Export HTML
                   </button>
                   <button
+
                     onClick={() => {
                       handleGeneratePlainText()
                       setShowMenu(false)
@@ -485,6 +498,7 @@ export default function EditorPage() {
                     Plain Text
                   </button>
                   <button
+
                     onClick={() => {
                       handleValidate()
                       setShowMenu(false)
@@ -516,7 +530,7 @@ export default function EditorPage() {
       </header>
 
       {/* Main Content Grid */}
-      <main className="flex-1 grid grid-cols-2 gap-0 overflow-hidden">
+      <main aria-label="Newsletter editor" className="flex-1 grid grid-cols-2 gap-0 overflow-hidden">
         {/* Left Panel: Editor */}
         <EditorPanel
           state={state}
@@ -536,9 +550,9 @@ export default function EditorPage() {
       {/* Validation Modal */}
       {showValidation && validationResult && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl max-h-[80vh] overflow-y-auto">
+          <div role="dialog" aria-modal="true" aria-labelledby={validationTitleId} className="bg-white rounded-lg p-6 max-w-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-wsu-text-dark">
+              <h2 id={validationTitleId} className="text-xl font-semibold text-wsu-text-dark">
                 Accessibility Validation
               </h2>
               <button

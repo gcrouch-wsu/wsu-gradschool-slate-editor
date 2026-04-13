@@ -2,6 +2,7 @@
 
 'use client'
 
+import { useEffect, useId, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
 
 interface ConfirmModalProps {
@@ -25,6 +26,47 @@ export default function ConfirmModal({
   onCancel,
   variant = 'warning',
 }: ConfirmModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  const descId = useId()
+
+  // Focus trap, Escape key, and focus restoration
+  useEffect(() => {
+    if (!isOpen) return
+    const previouslyFocused = document.activeElement as HTMLElement
+    const modalEl = modalRef.current
+    if (!modalEl) return
+    const getFocusable = () =>
+      modalEl.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    const focusable = getFocusable()
+    if (focusable.length > 0) focusable[0].focus()
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCancel()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const elements = getFocusable()
+      if (elements.length === 0) return
+      const first = elements[0]
+      const last = elements[elements.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus()
+    }
+  }, [isOpen, onCancel])
+
   if (!isOpen) return null
 
   const variantStyles = {
@@ -43,20 +85,28 @@ export default function ConfirmModal({
   }
 
   const styles = variantStyles[variant]
+  const dialogRole = variant === 'danger' ? 'alertdialog' : 'dialog'
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-md w-full shadow-xl">
+      <div
+        ref={modalRef}
+        role={dialogRole}
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descId}
+        className="bg-white rounded-lg max-w-md w-full shadow-xl"
+      >
         <div className="p-6">
           <div className="flex items-start gap-4">
             <div className={`flex-shrink-0 ${styles.iconColor}`}>
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-wsu-text-dark mb-2">
+              <h3 id={titleId} className="text-lg font-semibold text-wsu-text-dark mb-2">
                 {title}
               </h3>
-              <p className="text-sm text-wsu-text-body">{message}</p>
+              <p id={descId} className="text-sm text-wsu-text-body">{message}</p>
             </div>
           </div>
         </div>

@@ -72,6 +72,65 @@ export async function POST(request: NextRequest) {
             })
           }
         }
+
+        // Check body_html for images without alt text
+        if ('body_html' in card && card.body_html) {
+          const imgRegex = /<img\b[^>]*>/gi
+          const imgMatches = card.body_html.match(imgRegex) || []
+          for (const imgTag of imgMatches) {
+            const hasMeaningfulAlt =
+              /\balt\s*=\s*"[^"]+"/i.test(imgTag) ||
+              /\balt\s*=\s*'[^']+'/i.test(imgTag)
+            const hasEmptyAlt =
+              /\balt\s*=\s*""/i.test(imgTag) ||
+              /\balt\s*=\s*''/i.test(imgTag)
+            if (!hasMeaningfulAlt && !hasEmptyAlt) {
+              issues.push({
+                severity: 'error',
+                message: `Image in rich text content missing alt text in '${cardTitle}'`,
+                location: sectionTitle,
+                fix: 'Add alt text to the image in the rich text editor or code view',
+              })
+            } else if (hasEmptyAlt) {
+              issues.push({
+                severity: 'warning',
+                message: `Image has empty alt text in '${cardTitle}' — verify it is decorative`,
+                location: sectionTitle,
+                fix: 'If the image conveys meaning, add descriptive alt text',
+              })
+            }
+          }
+        }
+
+        // Check heading hierarchy in body_html
+        // Card titles render as h3 in email output, so body headings should start at h4+
+        if ('body_html' in card && card.body_html) {
+          const headingRegex = /<h([1-6])\b/gi
+          const headingLevels: number[] = []
+          let headingMatch
+          while ((headingMatch = headingRegex.exec(card.body_html)) !== null) {
+            headingLevels.push(parseInt(headingMatch[1]))
+          }
+          if (headingLevels.length > 0 && headingLevels[0] < 4) {
+            issues.push({
+              severity: 'warning',
+              message: `Body content starts with h${headingLevels[0]} in '${cardTitle}' — card titles already render as h3`,
+              location: sectionTitle,
+              fix: `Use h4 or lower for headings inside card body content`,
+            })
+          }
+          for (let i = 1; i < headingLevels.length; i++) {
+            if (headingLevels[i] > headingLevels[i - 1] + 1) {
+              issues.push({
+                severity: 'warning',
+                message: `Heading level skipped (h${headingLevels[i - 1]} \u2192 h${headingLevels[i]}) in '${cardTitle}'`,
+                location: sectionTitle,
+                fix: `Use h${headingLevels[i - 1] + 1} instead of h${headingLevels[i]} for proper heading hierarchy`,
+              })
+              break
+            }
+          }
+        }
       }
     }
 

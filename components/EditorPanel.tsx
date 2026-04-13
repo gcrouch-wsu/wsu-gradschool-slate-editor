@@ -73,6 +73,8 @@ export default function EditorPanel({
       <div className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
         <button
           onClick={() => toggleSection('settings')}
+          aria-expanded={openSections.settings}
+          aria-controls="panel-settings"
           className="w-full flex items-center justify-between p-4 bg-wsu-bg-light hover:bg-wsu-bg-card transition-colors"
         >
           <div className="flex items-center gap-2">
@@ -88,7 +90,7 @@ export default function EditorPanel({
           )}
         </button>
         {openSections.settings && (
-          <div className="p-4">
+          <div id="panel-settings" className="p-4">
             <SettingsEditor state={state} updateState={updateState} />
           </div>
         )}
@@ -98,6 +100,8 @@ export default function EditorPanel({
       <div className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
         <button
           onClick={() => toggleSection('masthead')}
+          aria-expanded={openSections.masthead}
+          aria-controls="panel-masthead"
           className="w-full flex items-center justify-between p-4 bg-wsu-bg-light hover:bg-wsu-bg-card transition-colors"
         >
           <div className="flex items-center gap-2">
@@ -111,7 +115,7 @@ export default function EditorPanel({
           )}
         </button>
         {openSections.masthead && (
-          <div className="p-4">
+          <div id="panel-masthead" className="p-4">
             <MastheadEditor state={state} updateState={updateState} />
           </div>
         )}
@@ -121,6 +125,8 @@ export default function EditorPanel({
       <div className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
         <button
           onClick={() => toggleSection('sections')}
+          aria-expanded={openSections.sections}
+          aria-controls="panel-sections"
           className="w-full flex items-center justify-between p-4 bg-wsu-bg-light hover:bg-wsu-bg-card transition-colors"
         >
           <div className="flex items-center gap-2">
@@ -134,7 +140,7 @@ export default function EditorPanel({
           )}
         </button>
         {openSections.sections && (
-          <div className="p-4">
+          <div id="panel-sections" className="p-4">
             <SectionsEditor state={state} updateState={updateState} />
           </div>
         )}
@@ -144,6 +150,8 @@ export default function EditorPanel({
       <div className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
         <button
           onClick={() => toggleSection('footer')}
+          aria-expanded={openSections.footer}
+          aria-controls="panel-footer"
           className="w-full flex items-center justify-between p-4 bg-wsu-bg-light hover:bg-wsu-bg-card transition-colors"
         >
           <div className="flex items-center gap-2">
@@ -157,7 +165,7 @@ export default function EditorPanel({
           )}
         </button>
         {openSections.footer && (
-          <div className="p-4">
+          <div id="panel-footer" className="p-4">
             <FooterEditor state={state} updateState={updateState} />
           </div>
         )}

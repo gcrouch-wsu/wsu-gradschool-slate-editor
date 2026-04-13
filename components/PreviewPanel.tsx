@@ -57,7 +57,7 @@ export default function PreviewPanel({
   }, [html])
 
   return (
-    <aside className="flex flex-col h-[calc(100vh-52px)] bg-wsu-bg-light">
+    <aside aria-label="Newsletter Preview" className="flex flex-col h-[calc(100vh-52px)] bg-wsu-bg-light">
       <div className="flex justify-between items-center p-3 bg-white border-b border-wsu-border-light">
         <span className="text-sm text-wsu-text-muted">
           <strong>Live Preview</strong> - What you see is what Slate will send

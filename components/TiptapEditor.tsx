@@ -474,8 +474,9 @@ export default function TiptapEditor({
               <Indent className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-1 px-2 border-l border-wsu-border-light">
-              <label className="text-xs text-wsu-text-muted whitespace-nowrap">Line Height:</label>
+              <label htmlFor="tiptap-line-height" className="text-xs text-wsu-text-muted whitespace-nowrap">Line Height:</label>
               <input
+                id="tiptap-line-height"
                 type="number"
                 value={listLineHeight}
                 onChange={(e) => handleLineHeightChange(e.target.value)}
@@ -495,8 +496,9 @@ export default function TiptapEditor({
               />
             </div>
             <div className="flex items-center gap-1 px-2">
-              <label className="text-xs text-wsu-text-muted whitespace-nowrap">Item Gap:</label>
+              <label htmlFor="tiptap-item-gap" className="text-xs text-wsu-text-muted whitespace-nowrap">Item Gap:</label>
               <input
+                id="tiptap-item-gap"
                 type="number"
                 value={listItemSpacing}
                 onChange={(e) => handleItemSpacingChange(e.target.value)}

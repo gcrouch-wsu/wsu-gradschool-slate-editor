@@ -47,10 +47,16 @@ export default function ColorPicker({ label, value, onChange }: ColorPickerProps
       }
     }
 
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowPalette(false)
+    }
+
     if (showPalette) {
       document.addEventListener('mousedown', handleClickOutside)
+      document.addEventListener('keydown', handleKeyDown)
       return () => {
         document.removeEventListener('mousedown', handleClickOutside)
+        document.removeEventListener('keydown', handleKeyDown)
       }
     }
   }, [showPalette])
@@ -69,8 +75,9 @@ export default function ColorPicker({ label, value, onChange }: ColorPickerProps
           <button
             type="button"
             onClick={() => setShowPalette(!showPalette)}
+            aria-expanded={showPalette}
+            aria-label="WSU color palette"
             className="px-2 py-1 text-xs font-medium text-wsu-text-dark border border-wsu-border-light rounded hover:bg-wsu-bg-light transition-colors flex items-center gap-1"
-            title="Show WSU color palette"
           >
             Palette
             {showPalette ? (
@@ -83,6 +90,8 @@ export default function ColorPicker({ label, value, onChange }: ColorPickerProps
         {showPalette && (
           <div
             ref={paletteRef}
+            role="radiogroup"
+            aria-label="WSU brand colors"
             className="absolute z-10 bottom-full mb-2 p-3 bg-white border border-wsu-border-light rounded-lg shadow-lg max-w-xs"
           >
             <div className="text-xs font-semibold text-wsu-text-dark mb-2">
@@ -93,12 +102,14 @@ export default function ColorPicker({ label, value, onChange }: ColorPickerProps
                 <button
                   key={color.value}
                   type="button"
+                  role="radio"
+                  aria-checked={value === color.value}
+                  aria-label={`${color.name} (${color.value})`}
                   onClick={() => {
                     onChange(color.value)
                     setShowPalette(false)
                   }}
                   className="flex flex-col items-center gap-1 p-2 rounded hover:bg-wsu-bg-light transition-colors group"
-                  title={`${color.name} (${color.value})`}
                 >
                   <div
                     className="w-8 h-8 rounded border border-wsu-border-light shadow-sm group-hover:ring-2 group-hover:ring-wsu-crimson transition-all"

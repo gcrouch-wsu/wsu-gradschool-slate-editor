@@ -4,3 +4,4 @@
 .env*.local
 .vercel
 *.tsbuildinfo
+next_build.md
