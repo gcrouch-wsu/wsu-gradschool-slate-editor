@@ -1,8 +1,16 @@
 {
-  "name": "newsletter-editor",
+  "name": "wsu-gradschool-slate-editor",
   "version": "1.0.0",
-  "description": "WSU Graduate School Newsletter Editor",
+  "description": "WSU Graduate School Slate Editor",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gcrouch-wsu/wsu-gradschool-slate-editor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gcrouch-wsu/wsu-gradschool-slate-editor/issues"
+  },
+  "homepage": "https://github.com/gcrouch-wsu/wsu-gradschool-slate-editor#readme",
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",
@@ -45,4 +53,3 @@
     "typescript": "^5.3.3"
   }
 }
-

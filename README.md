@@ -1,8 +1,8 @@
-# WSU Newsletter Editor (Slate)
+# WSU Gradschool Slate Editor
 
-HTML newsletter editor for **Friday Focus**, **Graduate School Briefing**, and **Slate Campaign** templates. This is a **Next.js** app, split out from the former [WSU Graduate School Tools](https://github.com/gcrouch-wsu/WSU-Mail-Editor) monorepo as its own repository.
+HTML newsletter editor for **Friday Focus**, **Graduate School Briefing**, and **Slate Campaign** templates. This is a **Next.js** app, split out from the former WSU Graduate School tools monorepo as its own repository.
 
-**Repository:** [github.com/gcrouch-wsu/slate-editor](https://github.com/gcrouch-wsu/slate-editor)
+**Repository:** [github.com/gcrouch-wsu/wsu-gradschool-slate-editor](https://github.com/gcrouch-wsu/wsu-gradschool-slate-editor)
 
 ## What it does
 
@@ -20,8 +20,8 @@ HTML newsletter editor for **Friday Focus**, **Graduate School Briefing**, and *
 1. Clone this repository:
 
 ```bash
-git clone https://github.com/gcrouch-wsu/slate-editor.git
-cd slate-editor
+git clone https://github.com/gcrouch-wsu/wsu-gradschool-slate-editor.git
+cd wsu-gradschool-slate-editor
 ```
 
 2. Install dependencies:
@@ -50,7 +50,7 @@ For production hosting on **Railway** or another Node host, use **`npm run build
 ## Project structure
 
 ```text
-slate-editor/
+wsu-gradschool-slate-editor/
 |-- app/                    # Next.js App Router (UI, API routes)
 |-- components/             # React components
 |-- lib/                    # Config, defaults, utilities
@@ -79,17 +79,7 @@ Deploy from **this** repo with **repository root** as the app root. Target platf
 
 ## Related WSU Graduate School tools
 
-Other tools still live in the monorepo ([WSU-Mail-Editor](https://github.com/gcrouch-wsu/WSU-Mail-Editor)) until they are split the same way:
-
-| Tool | Role |
-|------|------|
-| Home / platform | Landing page with links to all tools |
-| Org Chart Editor | Org chart builder and exporter |
-| Export Translation | Outcomes translation tables |
-| Validate | Static validator (HTML/JS) |
-| Factsheet | WordPress WXR -> HTML |
-
-Live URLs for those apps are listed in the [monorepo README](https://github.com/gcrouch-wsu/WSU-Mail-Editor/blob/main/README.md).
+This repo is maintained independently from the other Graduate School tools.
 
 ## Environment variables
 
