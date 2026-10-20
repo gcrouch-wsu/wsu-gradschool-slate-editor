@@ -3,13 +3,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { defaultFFModel, defaultBriefingModel, defaultLetterModel } from '@/lib/defaults'
 import type { NewsletterData } from '@/types/newsletter'
+import { allowContentRoute } from '@/lib/auth/guard'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { type: string } }
+  { params }: { params: Promise<{ type: string }> }
 ) {
+  const denied = await allowContentRoute(request)
+  if (denied) return denied
   try {
-    const templateType = params.type
+    const { type: templateType } = await params
 
     let model: NewsletterData
     if (templateType === 'briefing') {

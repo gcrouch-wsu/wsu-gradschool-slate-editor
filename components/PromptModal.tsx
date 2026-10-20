@@ -29,20 +29,26 @@ export default function PromptModal({
   onCancel,
 }: PromptModalProps) {
   const [value, setValue] = useState(defaultValue)
+  const [trackedPrompt, setTrackedPrompt] = useState({ isOpen, defaultValue })
   const inputRef = useRef<HTMLInputElement>(null)
   const modalRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const descId = useId()
 
+  if (isOpen && (trackedPrompt.isOpen !== isOpen || trackedPrompt.defaultValue !== defaultValue)) {
+    setTrackedPrompt({ isOpen, defaultValue })
+    setValue(defaultValue)
+  } else if (!isOpen && trackedPrompt.isOpen) {
+    setTrackedPrompt({ isOpen, defaultValue })
+  }
+
   useEffect(() => {
-    if (isOpen) {
-      setValue(defaultValue)
-      // Focus input after modal opens
-      setTimeout(() => {
-        inputRef.current?.focus()
-        inputRef.current?.select()
-      }, 100)
-    }
+    if (!isOpen) return
+    const timer = setTimeout(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }, 100)
+    return () => clearTimeout(timer)
   }, [isOpen, defaultValue])
 
   // Focus trap and focus restoration

@@ -57,7 +57,12 @@ export default function TiptapEditor({
 }: TiptapEditorProps) {
   const [linkPromptOpen, setLinkPromptOpen] = useState(false)
   const [codeView, setCodeView] = useState(false)
-  const [htmlCode, setHtmlCode] = useState('')
+  const [htmlCode, setHtmlCode] = useState(value || '')
+  const [trackedHtml, setTrackedHtml] = useState(value)
+  if (value !== trackedHtml) {
+    setTrackedHtml(value)
+    setHtmlCode(value || '')
+  }
   const [listLineHeight, setListLineHeight] = useState('1.5')
   const [listItemSpacing, setListItemSpacing] = useState('8')
   const [isInList, setIsInList] = useState(false) // Track if cursor is in a list
@@ -178,17 +183,9 @@ export default function TiptapEditor({
       // Only update if the value is different (to avoid infinite loops)
       if (normalizedCurrent !== value) {
         editor.commands.setContent(value || '', { emitUpdate: false })
-        setHtmlCode(value || '')
       }
     }
   }, [value, editor, codeView])
-
-  // Sync htmlCode when value changes externally
-  useEffect(() => {
-    if (value !== undefined) {
-      setHtmlCode(value || '')
-    }
-  }, [value])
 
   // Handle code view toggle
   const handleToggleCodeView = () => {

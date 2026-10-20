@@ -2,8 +2,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { NewsletterData, StatsResult } from '@/types/newsletter'
+import { allowContentRoute } from '@/lib/auth/guard'
 
 export async function POST(request: NextRequest) {
+  const denied = await allowContentRoute(request)
+  if (denied) return denied
   try {
     const data: NewsletterData = await request.json()
 

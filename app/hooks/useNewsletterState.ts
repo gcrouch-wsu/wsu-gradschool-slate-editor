@@ -7,7 +7,10 @@ import { clone } from '@/lib/utils'
 const UNDO_MAX = 50
 const AUTO_SAVE_INTERVAL = 30000 // 30 seconds
 
-export function useNewsletterState(initialData: NewsletterData) {
+export function useNewsletterState(
+  initialData: NewsletterData,
+  backupWritesEnabled = true
+) {
   const [state, setState] = useState<NewsletterData>(initialData)
   const [undoStack, setUndoStack] = useState<NewsletterData[]>([])
   const [redoStack, setRedoStack] = useState<NewsletterData[]>([])
@@ -133,15 +136,11 @@ export function useNewsletterState(initialData: NewsletterData) {
     hasUnsavedChangesRef.current = false
   }, [])
 
-  // Start auto-save
+  // Save only after recovery has been resolved, and only when the editor has changes.
+  // An unresolved restore prompt must keep the backup that produced it.
   useEffect(() => {
-    // Delay initial save to allow backup check to complete first
-    // This prevents overwriting the backup immediately after mount
-    const initialSaveTimeout = setTimeout(() => {
-      saveToLocalStorage()
-    }, 1000) // 1 second delay
+    if (!backupWritesEnabled) return
 
-    // Then save every 30 seconds if there are unsaved changes
     autoSaveTimerRef.current = setInterval(() => {
       if (hasUnsavedChangesRef.current) {
         saveToLocalStorage()
@@ -149,12 +148,11 @@ export function useNewsletterState(initialData: NewsletterData) {
     }, AUTO_SAVE_INTERVAL)
 
     return () => {
-      clearTimeout(initialSaveTimeout)
       if (autoSaveTimerRef.current) {
         clearInterval(autoSaveTimerRef.current)
       }
     }
-  }, [saveToLocalStorage])
+  }, [backupWritesEnabled, saveToLocalStorage])
 
   // Warn before leaving page with unsaved changes
   useEffect(() => {

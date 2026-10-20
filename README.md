@@ -12,8 +12,9 @@ HTML newsletter editor for **Friday Focus**, **Graduate School Briefing**, and *
 
 ## Requirements
 
-- **Node.js** 18+ (20+ recommended)
+- **Node.js** 20.9 or newer (the app declares `engines.node`)
 - **npm**
+- PostgreSQL only when trying shared newsletters locally. The editor at `/` runs without a database, including on Vercel.
 
 ## Quick start
 
@@ -45,7 +46,7 @@ npm run build
 npm run start
 ```
 
-For production hosting on **Railway** or another Node host, use **`npm run build`** followed by **`npm run start`** so the platform-provided **`PORT`** is respected.
+`npm run start` runs `node scripts/start.mjs`, which binds `HOSTNAME` (default `0.0.0.0`) and `PORT` (default `3000`). That works on Windows and in a container. Do not rely on a shell default such as `${PORT:-3000}`.
 
 ## Project structure
 
@@ -68,14 +69,28 @@ wsu-gradschool-slate-editor/
 |--------|-------------|
 | `npm run dev` | Development server (`next dev`, port 3001) |
 | `npm run build` | Production build (`next build`) |
-| `npm run start` | Production server (`next start`) |
+| `npm run start` | Production server on `PORT` / `HOSTNAME` |
 | `npm run lint` | ESLint |
+| `npm run check` | Typecheck |
+| `npm run test` | Unit and PostgreSQL tests |
+| `npm run migrate` | Apply ordered SQL migrations |
+| `npm run create-admin` | Provision the first administrator from an Okta issuer and subject |
 | `npm run format` | Prettier write |
 | `npm run checkfmt` | Prettier check |
 
+## Authentication and shared editing
+
+`AUTH_MODE=local` is the Vercel setup. Editors sign in with an email and password stored for that account. Passwords are hashed. Drafts are shared newsletters in Postgres.
+
+`AUTH_MODE=development` is for local tests and is refused in production. It is not the staff login.
+
+`AUTH_MODE=okta` is a future release. It does not replace local accounts until you select it.
+
 ## Deployment
 
-Deploy from **this** repo with **repository root** as the app root. Target platform: **Railway** or any Node host that runs `npm run build` and `npm run start` with `PORT` set.
+The current host is Vercel. Create a Postgres database, set `AUTH_MODE=local`, `DATABASE_URL`, `SESSION_SECRET`, and `PUBLIC_ORIGIN`, then run migrations and create accounts. The steps are in [docs/deployment.md](docs/deployment.md). Do not commit `.env`.
+
+Okta sign-in and an AWS move are later work.
 
 ## Related WSU Graduate School tools
 
@@ -83,4 +98,4 @@ This repo is maintained independently from the other Graduate School tools.
 
 ## Environment variables
 
-No environment variables are required for this app in normal operation. If you add hosting-specific settings later, document them here and use `.env.local` locally (never commit secrets).
+See `.env.example`. Vercel does not need them. Okta mode, when that release is turned on, refuses to start cleanly unless the issuer, client id, client secret, session secret, public origin, and database URL are set.

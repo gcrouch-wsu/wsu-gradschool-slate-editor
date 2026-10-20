@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+playwright-report
+test-results
+data
+coverage
+.env
+.env.*
+!.env.example
+tests/browser/.runtime.json

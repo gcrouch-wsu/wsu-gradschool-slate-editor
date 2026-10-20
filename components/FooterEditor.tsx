@@ -31,7 +31,13 @@ function EditableTag({
 }) {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(value)
+  const [trackedValue, setTrackedValue] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  if (value !== trackedValue) {
+    setTrackedValue(value)
+    setEditValue(value)
+  }
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -39,10 +45,6 @@ function EditableTag({
       inputRef.current.select()
     }
   }, [isEditing])
-
-  useEffect(() => {
-    setEditValue(value)
-  }, [value])
 
   // Truncate URL for display: show ".tld..." after common TLDs
   const truncateUrlDisplay = (url: string): string => {

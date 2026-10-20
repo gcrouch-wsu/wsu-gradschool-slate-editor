@@ -121,10 +121,11 @@ export default function MastheadEditor({
       </div>
 
       <div>
-        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="newsletter-title">
           Newsletter Title
         </label>
         <input
+          id="newsletter-title"
           type="text"
           value={masthead.title || ''}
           onChange={(e) =>

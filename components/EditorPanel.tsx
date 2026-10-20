@@ -24,6 +24,7 @@ interface EditorPanelProps {
   ) => void
   templateType: TemplateType
   onTemplateChange: (type: TemplateType) => void
+  readOnly?: boolean
 }
 
 export default function EditorPanel({
@@ -31,6 +32,7 @@ export default function EditorPanel({
   updateState,
   templateType,
   onTemplateChange,
+  readOnly = false,
 }: EditorPanelProps) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     settings: false,
@@ -47,7 +49,7 @@ export default function EditorPanel({
   }
 
   return (
-    <div className="overflow-y-auto bg-white border-r border-wsu-border-light p-4">
+    <fieldset disabled={readOnly} className="overflow-y-auto bg-white border-r border-wsu-border-light p-4 min-w-0">
       {/* Template Selection */}
       <div className="mb-4 p-4 bg-wsu-bg-light rounded-lg border border-wsu-border-light">
         <label className="block mb-2 font-medium text-wsu-text-dark">
@@ -170,7 +172,7 @@ export default function EditorPanel({
           </div>
         )}
       </div>
-    </div>
+    </fieldset>
   )
 }
 

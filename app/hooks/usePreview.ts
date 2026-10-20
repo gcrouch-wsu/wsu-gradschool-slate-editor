@@ -1,6 +1,6 @@
 // app/editor/hooks/usePreview.ts - Preview generation hook
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import type { NewsletterData, PreviewResponse } from '@/types/newsletter'
 import { debounce } from '@/lib/utils'
 
@@ -35,12 +35,12 @@ export function usePreview(initialHtml = '') {
     }
   }, [])
 
-  // Debounced version for real-time updates
-  const debouncedUpdatePreview = useRef(
-    debounce((data: NewsletterData) => {
+  const debouncedUpdatePreview = useMemo(
+    () => debounce((data: NewsletterData) => {
       updatePreview(data)
-    }, 400)
-  ).current
+    }, 400),
+    [updatePreview]
+  )
 
   return {
     html,

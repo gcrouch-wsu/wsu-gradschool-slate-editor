@@ -24,6 +24,7 @@ import {
   BORDER_MEDIUM,
 } from './styles'
 import { SLATE_VARIABLES } from './config'
+import { authorUrl, cssHex, normalizeNewsletter, optionalCssHex } from './newsletter-document'
 import type {
   NewsletterData,
   Masthead,
@@ -71,7 +72,8 @@ function generateShadowCSS(shadow: Shadow | undefined): string {
     return ''
   }
 
-  const { color, blur, spread, offset_x, offset_y, opacity } = shadow
+  const color = cssHex(shadow.color, '#000000')
+  const { blur, spread, offset_x, offset_y, opacity } = shadow
   const rgba = hexToRGBA(color, opacity)
   return `box-shadow: ${offset_x}px ${offset_y}px ${blur}px ${spread}px ${rgba};`
 }
@@ -105,7 +107,7 @@ function getAccentBarStyle(settings: Settings | null): string {
   }
 
   const width = settings.accent_bar_width || 4
-  const color = settings.accent_bar_color || CRIMSON
+  const color = cssHex(settings.accent_bar_color, CRIMSON)
   const shadowCSS = generateShadowCSS(settings.accent_bar_shadow)
 
   return `width:${width}px; background-color:${color}; ${shadowCSS}`
@@ -142,11 +144,13 @@ function processBodyHtmlForEmail(
 
   // Default values
   const borderStyle = tableOptions?.borderStyle || 'light'
-  const borderColor = tableOptions?.borderColor || BORDER_MEDIUM
-  const fontSize = tableOptions?.fontSize || 16
-  const headerBgColor = tableOptions?.headerBgColor || BG_LIGHT
-  const headerUnderline = tableOptions?.headerUnderline || 0
-  const headerUnderlineColor = tableOptions?.headerUnderlineColor || borderColor
+  const borderColor = cssHex(tableOptions?.borderColor, BORDER_MEDIUM)
+  const fontSize = Number.isFinite(tableOptions?.fontSize) ? Math.min(32, Math.max(8, tableOptions!.fontSize!)) : 16
+  const headerBgColor = cssHex(tableOptions?.headerBgColor, BG_LIGHT)
+  const headerUnderline = Number.isFinite(tableOptions?.headerUnderline)
+    ? Math.min(12, Math.max(0, tableOptions!.headerUnderline!))
+    : 0
+  const headerUnderlineColor = cssHex(tableOptions?.headerUnderlineColor, borderColor)
 
   // Calculate border width based on style
   const borderWidth =
@@ -271,9 +275,12 @@ export function renderViewInBrowser(): string {
  * Newsletter masthead with banner, title, tagline, optional hero link
  */
 export function renderMasthead(data: Masthead, containerWidth = 640): string {
-  const bannerUrl = data.banner_url || ''
+  const bannerUrl = authorUrl(data.banner_url)
   const bannerAlt = data.banner_alt || ''
-  const bannerAlign = data.banner_align || 'center'
+  const bannerAlign =
+    data.banner_align === 'left' || data.banner_align === 'right' || data.banner_align === 'center'
+      ? data.banner_align
+      : 'center'
   const bannerPadding = data.banner_padding || {
     top: 20,
     right: 0,
@@ -284,7 +291,7 @@ export function renderMasthead(data: Masthead, containerWidth = 640): string {
   const title = data.title || ''
   const tagline = data.tagline || ''
   const heroShow = data.hero_show !== false
-  const heroLink = data.hero_link || ''
+  const heroLink = authorUrl(data.hero_link)
 
   // Build banner HTML
   let bannerHtml = ''
@@ -350,11 +357,11 @@ export function renderSectionStart(
   let titleAlign = layout.title_align || 'left'
   const paddingTop = layout.padding_top || 18
   const paddingBottom = layout.padding_bottom || 28
-  const bgColor = layout.background_color || ''
+  const bgColor = optionalCssHex(layout.background_color)
   const borderRadius = layout.border_radius || 0
   const dividerEnabled = layout.divider_enabled !== false
   const dividerThickness = layout.divider_thickness || 2
-  const dividerColor = layout.divider_color || BORDER_LIGHT
+  const dividerColor = cssHex(layout.divider_color, BORDER_LIGHT)
 
   // Validate title_align
   if (!['left', 'center', 'right'].includes(titleAlign)) {
@@ -438,7 +445,7 @@ function renderCardLinks(card: Card): string {
   const linkHtml: string[] = []
   for (const link of links) {
     const label = (link.label || '').trim()
-    const url = (link.url || '').trim()
+    const url = authorUrl(link.url)
     if (label && url) {
       linkHtml.push(
         `<a href="${esc(url)}" style="${STYLE_LINK}">${esc(label)}</a>`
@@ -463,14 +470,14 @@ function renderCardLinks(card: Card): string {
  * Build card style with per-card customization and global shadow support
  */
 function getCardStyle(card: Card, settings: Settings | null = null): string {
-  const bgColor = card.background_color || '#f9f9f9'
+  const bgColor = cssHex(card.background_color, '#f9f9f9')
 
   // Use global card_spacing as default, allow per-card override
   const globalSpacing = settings?.card_spacing !== undefined ? settings.card_spacing : 20
   const spacingBottom = card.spacing_bottom !== undefined ? card.spacing_bottom : globalSpacing
 
   const borderWidth = card.border_width || 0
-  const borderColor = card.border_color || '#e0e0e0'
+  const borderColor = cssHex(card.border_color, '#e0e0e0')
 
   // Use global card_border_radius as default, allow per-card override
   const globalRadius = settings?.card_border_radius || 0
@@ -708,7 +715,7 @@ function renderResourceCard(
   const title = card.title || ''
   const bodyHtml = card.body_html || ''
   const showIcon = card.show_icon || false
-  const iconUrl = card.icon_url || ''
+  const iconUrl = authorUrl(card.icon_url)
   const iconAlt = card.icon_alt || ''
   const iconSize = card.icon_size || 80
 
@@ -794,7 +801,7 @@ function renderLetterCard(
   const closing = (card.closing || '').trim()
   const signatureName = (card.signature_name || '').trim()
   const signatureLines = card.signature_lines || []
-  const signatureImageUrl = (card.signature_image_url || '').trim()
+  const signatureImageUrl = authorUrl(card.signature_image_url)
   const signatureImageAlt = (card.signature_image_alt || 'Signature').trim()
   const signatureImageWidth = card.signature_image_width || 220
 
@@ -1051,9 +1058,9 @@ export function renderFooter(data: Footer, templateType?: 'ff' | 'briefing' | 'l
   const social = data.social || []
 
   // Colors (with defaults)
-  const bgColor = data.background_color || '#2A3033'
-  const textColor = data.text_color || '#cccccc'
-  const linkColor = data.link_color || '#ffffff'
+  const bgColor = cssHex(data.background_color, '#2A3033')
+  const textColor = cssHex(data.text_color, '#cccccc')
+  const linkColor = cssHex(data.link_color, '#ffffff')
 
   // For letter template, use white background and black text
   const isLetterTemplate = templateType === 'letter' || bgColor === '#FFFFFF' || bgColor === '#ffffff'
@@ -1073,8 +1080,8 @@ export function renderFooter(data: Footer, templateType?: 'ff' | 'briefing' | 'l
   // Build social icons HTML dynamically
   let socialIconsHtml = ''
   for (const link of socialLinks) {
-    const url = (link.url || '').trim()
-    const icon = (link.icon || '').trim()
+    const url = authorUrl(link.url)
+    const icon = authorUrl(link.icon)
     let alt = (link.alt || link.platform || 'Social Media').trim()
 
     // Ensure alt text always exists for accessibility
@@ -1225,8 +1232,7 @@ function renderSection(
       const links = card.links || []
       const ctaButtonLabel =
         links.length > 0 && links[0].label ? links[0].label : 'Learn more'
-      const ctaButtonUrl =
-        links.length > 0 && links[0].url ? links[0].url : '#'
+      const ctaButtonUrl = authorUrl(links.length > 0 ? links[0].url : '')
 
       cardHtml.push(
         renderCTABox(
@@ -1234,12 +1240,12 @@ function renderSection(
           ctaBody,
           ctaButtonLabel,
           ctaButtonUrl,
-          card.button_bg_color || '#A60F2D',
-          card.button_text_color || '#ffffff',
+          cssHex(card.button_bg_color, '#A60F2D'),
+          cssHex(card.button_text_color, '#ffffff'),
           card.button_padding_vertical || 12,
           card.button_padding_horizontal || 32,
           card.button_border_width || 0,
-          card.button_border_color || '#8c0d25',
+          cssHex(card.button_border_color, '#8c0d25'),
           card.button_border_radius || 10,
           card.button_alignment || 'center',
           card.button_full_width || false,
@@ -1271,7 +1277,8 @@ function renderSection(
 /**
  * Generate complete email HTML with container width support
  */
-export function renderFullEmail(data: NewsletterData): string {
+export function renderFullEmail(input: NewsletterData): string {
+  const data = normalizeNewsletter(input)
   const masthead = data.masthead || {}
   const sections = data.sections || []
   const footer = data.footer || {}
@@ -1297,7 +1304,9 @@ export function renderFullEmail(data: NewsletterData): string {
   const preheaderText = masthead.preheader || ''
 
   // Get container width from settings
-  const containerWidth = settings.container_width || 640
+  const containerWidth = Number.isFinite(settings.container_width)
+    ? Math.min(800, Math.max(320, Math.round(settings.container_width)))
+    : 640
 
   // Get section spacing and border settings
   const sectionSpacing = settings.section_spacing || 24
