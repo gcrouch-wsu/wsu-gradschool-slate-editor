@@ -18,12 +18,9 @@ import {
 
 interface EditorPanelProps {
   state: NewsletterData
-  updateState: (
-    updater: (prev: NewsletterData) => NewsletterData,
-    pushHistory?: boolean
-  ) => void
+  updateState: (updater: (prev: NewsletterData) => NewsletterData, pushHistory?: boolean) => void
   templateType: TemplateType
-  onTemplateChange: (type: TemplateType) => void
+  onTemplateChange?: (type: TemplateType) => void
   readOnly?: boolean
 }
 
@@ -51,25 +48,24 @@ export default function EditorPanel({
   return (
     <fieldset disabled={readOnly} className="overflow-y-auto bg-white border-r border-wsu-border-light p-4 min-w-0">
       {/* Template Selection */}
-      <div className="mb-4 p-4 bg-wsu-bg-light rounded-lg border border-wsu-border-light">
-        <label className="block mb-2 font-medium text-wsu-text-dark">
-          Template
-        </label>
-        <select
-          value={templateType}
-          onChange={(e) =>
-            onTemplateChange(e.target.value as TemplateType)
-          }
-          className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
-        >
-          <option value="ff">Friday Focus (Students)</option>
-          <option value="briefing">Graduate School Briefing (Faculty/Staff)</option>
-          <option value="letter">Graduate School Slate Campaign</option>
-        </select>
-        <p className="mt-2 text-xs text-wsu-text-muted">
-          Switching templates will load default content for that template type.
-        </p>
-      </div>
+      {onTemplateChange && (
+        <div className="mb-4 p-4 bg-wsu-bg-light rounded-lg border border-wsu-border-light">
+          <label htmlFor="newsletter-template" className="block mb-2 font-medium text-wsu-text-dark">Template</label>
+          <select
+            id="newsletter-template"
+            value={templateType}
+            onChange={(e) => onTemplateChange(e.target.value as TemplateType)}
+            className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+          >
+            <option value="ff">Friday Focus (Students)</option>
+            <option value="briefing">Graduate School Briefing (Faculty/Staff)</option>
+            <option value="letter">Graduate School Slate Campaign</option>
+          </select>
+          <p className="mt-2 text-xs text-wsu-text-muted">
+            Switching templates will load default content for that template type.
+          </p>
+        </div>
+      )}
 
       {/* Global Settings */}
       <div className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
@@ -175,4 +171,3 @@ export default function EditorPanel({
     </fieldset>
   )
 }
-

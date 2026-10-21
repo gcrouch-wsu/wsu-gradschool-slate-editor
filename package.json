@@ -17,6 +17,7 @@
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",
+    "build:vercel": "node scripts/vercel-build.mjs",
     "start": "node scripts/start.mjs",
     "lint": "eslint .",
     "check": "tsc --noEmit --incremental false",

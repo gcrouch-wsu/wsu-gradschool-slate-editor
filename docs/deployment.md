@@ -16,10 +16,14 @@ The current production host is Vercel. Shared newsletters are saved in Postgres 
 npm run create-user -- --email you@wsu.edu --name "Your Name" --password "a-long-password" --role administrator
 ```
 
-4. Deploy with the Next.js build. Open the site, sign in, and add other editors at `/admin`.
+4. Deploy with the configured Vercel build (`npm run build:vercel`). Production builds apply pending SQL migrations before Next.js builds; a migration failure fails the build. Open the site, sign in, and add other editors at `/admin`.
 5. Each person signs in with the email and password you issued. Drafts are the shared newsletters at `/newsletters`. One person edits a newsletter at a time; the next person takes over when they finish.
 
 Leave the Okta variables unset. `AUTH_MODE=development` does not work on Vercel.
+
+The stable production entry point is `https://wsu-gradschool-slate-editor.vercel.app/sign-in`.
+Vercel also gives each deployment a unique URL. Production builds redirect that deployment hostname to `PUBLIC_ORIGIN`, preserving the path. Preview URLs are unchanged.
+Preview builds do not automatically migrate a database, because the integration may share production credentials. Use an isolated preview database and apply its migrations explicitly when testing schema changes.
 
 ## Runtime
 

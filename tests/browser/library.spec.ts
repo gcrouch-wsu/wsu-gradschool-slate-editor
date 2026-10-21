@@ -164,6 +164,7 @@ test('draft errors are recoverable, Undo/Redo save, and leaving flushes and rele
   await page.getByRole('button', { name: 'Retry', exact: true }).click()
   await expect(page.getByTestId('save-status')).toHaveText('Saved')
   await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.locator('select')).toHaveCount(0)
   await page.getByRole('button', { name: 'Masthead', exact: true }).click()
   const title = page.getByLabel('Newsletter Title', { exact: true })
   await title.fill('Accessible shared newsletter')

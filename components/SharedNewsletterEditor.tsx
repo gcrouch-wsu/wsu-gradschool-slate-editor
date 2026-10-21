@@ -11,7 +11,7 @@ import { usePreview } from '@/app/hooks/usePreview'
 import { beginLeaseRequest, clearTabLease, currentLeaseToken, rememberLease } from '@/lib/client/tab-lease'
 import { SerializedSaver, type SaveResponse, type SaveStatus } from '@/lib/client/save-queue'
 import { errorMessage, jsonBody, RequestError, requestJson } from '@/lib/client/request'
-import type { NewsletterData, TemplateType, ValidationIssue, ValidationResult } from '@/types/newsletter'
+import type { NewsletterData, ValidationIssue, ValidationResult } from '@/types/newsletter'
 
 interface Props {
   newsletterId: string
@@ -50,7 +50,6 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const operationRef = useRef(false)
-  const [templatePrompt, setTemplatePrompt] = useState<TemplateType | null>(null)
   const [leavePrompt, setLeavePrompt] = useState(false)
   const [recovery, setRecovery] = useState<NewsletterData | null>(null)
   const [staleRecovery, setStaleRecovery] = useState(false)
@@ -373,21 +372,6 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
     }
     router.push('/newsletters')
   }
-  async function changeTemplate(template: TemplateType) {
-    await operation('Switching template…', async () => {
-      if (!(await flushChanges())) return
-      const lease = await requestJson<Lease>(
-        `/api/newsletters/${newsletterId}/lifecycle`,
-        jsonBody({
-          action: 'template',
-          token: currentLeaseToken(newsletterId),
-          expectedVersion: versionRef.current,
-          template,
-        }),
-      )
-      adopt(lease)
-    })
-  }
   async function checkAccessibility() {
     await operation('Checking accessibility…', async () => {
       const result = await requestJson<ValidationResult>('/api/validate', jsonBody(stateRef.current))
@@ -604,26 +588,12 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
             updateState={onEdit}
             templateType={state.template}
             readOnly={!canWrite || busy !== null}
-            onTemplateChange={setTemplatePrompt}
           />
         </div>
         <div className={`min-w-0 ${mobileView === 'preview' ? '' : 'hidden lg:block'}`}>
           <PreviewPanel html={html} loading={loading} onRefresh={() => void updatePreview(state)} />
         </div>
       </main>
-      <ConfirmModal
-        isOpen={templatePrompt !== null}
-        title="Switch Template"
-        message="This replaces the newsletter with that template's defaults. Your current changes will be saved in history first."
-        confirmLabel="Switch"
-        cancelLabel="Cancel"
-        variant="warning"
-        onConfirm={() => {
-          if (templatePrompt) void changeTemplate(templatePrompt)
-          setTemplatePrompt(null)
-        }}
-        onCancel={() => setTemplatePrompt(null)}
-      />
       <ConfirmModal
         isOpen={leavePrompt}
         title="Leave with changes not saved?"
