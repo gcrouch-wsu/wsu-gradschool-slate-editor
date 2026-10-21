@@ -4,7 +4,6 @@ import { migrateDatabase } from './migrate.mjs'
 
 try {
   // Run once per production build, before the new application can receive traffic.
-  // Preview builds must not migrate the production database through shared credentials.
   if (process.env.VERCEL_ENV === 'production') await migrateDatabase(process.env.DATABASE_URL)
   const nextBin = createRequire(import.meta.url).resolve('next/dist/bin/next')
   const build = spawnSync(process.execPath, [nextBin, 'build'], { stdio: 'inherit' })

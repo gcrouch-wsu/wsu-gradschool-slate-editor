@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -161,6 +162,34 @@ test('a changed applied migration is rejected', async () => {
     await expect(migrateDatabase(databaseUrl)).rejects.toThrow(/changed after it was applied/)
   } finally {
     await writeFile(file, original)
+  }
+})
+
+test('Windows and Linux migration checksums are compatible without rewriting the ledger', async () => {
+  const file = join(process.cwd(), 'migrations', '001_initial.sql')
+  const original = await readFile(file, 'utf8')
+  const lf = original.replace(/\r\n/g, '\n')
+  const crlf = lf.replace(/\n/g, '\r\n')
+  const checksum = (sql: string) => createHash('sha256').update(sql).digest('hex')
+  const recorded = await getPool().query<{ sql_sha256: string }>(
+    "SELECT sql_sha256 FROM schema_migrations WHERE id = '001_initial.sql'",
+  )
+  try {
+    for (const [storedSql, checkedOutSql] of [[crlf, lf], [lf, crlf]]) {
+      const storedHash = checksum(storedSql)
+      await getPool().query("UPDATE schema_migrations SET sql_sha256 = $1 WHERE id = '001_initial.sql'", [storedHash])
+      await writeFile(file, checkedOutSql)
+      await migrateDatabase(databaseUrl)
+      const unchanged = await getPool().query<{ sql_sha256: string }>(
+        "SELECT sql_sha256 FROM schema_migrations WHERE id = '001_initial.sql'",
+      )
+      expect(unchanged.rows[0].sql_sha256).toBe(storedHash)
+      await writeFile(file, `${checkedOutSql}\n-- real SQL change\n`)
+      await expect(migrateDatabase(databaseUrl)).rejects.toThrow(/changed after it was applied/)
+    }
+  } finally {
+    await writeFile(file, original)
+    await getPool().query("UPDATE schema_migrations SET sql_sha256 = $1 WHERE id = '001_initial.sql'", [recorded.rows[0].sql_sha256])
   }
 })
 

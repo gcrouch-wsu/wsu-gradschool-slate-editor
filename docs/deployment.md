@@ -22,8 +22,8 @@ npm run create-user -- --email you@wsu.edu --name "Your Name" --password "a-long
 Leave the Okta variables unset. `AUTH_MODE=development` does not work on Vercel.
 
 The stable production entry point is `https://wsu-gradschool-slate-editor.vercel.app/sign-in`.
-Vercel also gives each deployment a unique URL. Production builds redirect that deployment hostname to `PUBLIC_ORIGIN`, preserving the path. Preview URLs are unchanged.
-Preview builds do not automatically migrate a database, because the integration may share production credentials. Use an isolated preview database and apply its migrations explicitly when testing schema changes.
+Vercel also gives each deployment a unique URL. Production builds redirect that deployment hostname to `PUBLIC_ORIGIN`, preserving the path.
+Only `main` triggers automatic Vercel deployments. Automatic deployments from other branches are disabled in `vercel.json`.
 
 ## Runtime
 
@@ -46,7 +46,7 @@ Apply migrations as a separate command before starting a new release:
 npm run migrate
 ```
 
-`scripts/migrate.mjs` takes an advisory lock, records each file's SHA-256, and exits non-zero when `DATABASE_URL` is missing, a connection fails, or an already-applied file changes. Add a new file under `migrations/` instead of editing an applied file. Do not run migrations from a page or API request.
+`scripts/migrate.mjs` takes an advisory lock, records each file's SHA-256, and exits non-zero when `DATABASE_URL` is missing, a connection fails, or an already-applied file changes. Checksums normalize CRLF to LF and also accept previously recorded Windows CRLF hashes; no ledger entries are rewritten. Add a new file under `migrations/` instead of editing an applied file. Do not run migrations from a page or API request.
 
 For the current Vercel release, create named accounts with passwords. The password is hashed and is not stored as text:
 

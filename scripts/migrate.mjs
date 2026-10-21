@@ -38,10 +38,14 @@ export async function migrateDatabase(connectionString) {
     const applied = await client.query('SELECT id, sql_sha256 FROM schema_migrations')
     const appliedMap = new Map(applied.rows.map((row) => [row.id, row.sql_sha256]))
     for (const file of files) {
-      const sql = await readFile(join(migrationDir, file), 'utf8')
+      // Git checks SQL out as LF on Linux and may use CRLF on Windows.
+      // New ledger entries use LF; old exact CRLF hashes remain valid without
+      // rewriting history or relaxing validation of any other SQL changes.
+      const sql = (await readFile(join(migrationDir, file), 'utf8')).replace(/\r\n/g, '\n')
       const hash = createHash('sha256').update(sql).digest('hex')
+      const legacyWindowsHash = createHash('sha256').update(sql.replace(/\n/g, '\r\n')).digest('hex')
       const previous = appliedMap.get(file)
-      if (previous && previous !== hash) {
+      if (previous && previous !== hash && previous !== legacyWindowsHash) {
         throw new Error(`Migration ${file} changed after it was applied. Add a new migration instead.`)
       }
       if (previous) continue
