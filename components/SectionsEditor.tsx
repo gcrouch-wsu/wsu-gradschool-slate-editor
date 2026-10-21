@@ -35,18 +35,58 @@ interface SectionsEditorProps {
   ) => void
 }
 
+function ReorderButtons({
+  label,
+  index,
+  count,
+  onMove,
+}: {
+  label: string
+  index: number
+  count: number
+  onMove: (direction: -1 | 1) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      <button
+        type="button"
+        className="inline-flex min-h-11 items-center justify-center px-3 text-sm font-semibold text-wsu-text-dark bg-white border border-wsu-border-medium rounded-md hover:bg-wsu-bg-light disabled:opacity-50"
+        disabled={index <= 0}
+        aria-label={`Move ${label} up`}
+        onClick={() => onMove(-1)}
+      >
+        Move up
+      </button>
+      <button
+        type="button"
+        className="inline-flex min-h-11 items-center justify-center px-3 text-sm font-semibold text-wsu-text-dark bg-white border border-wsu-border-medium rounded-md hover:bg-wsu-bg-light disabled:opacity-50"
+        disabled={index >= count - 1}
+        aria-label={`Move ${label} down`}
+        onClick={() => onMove(1)}
+      >
+        Move down
+      </button>
+    </div>
+  )
+}
+
 // Sortable section item component
 function SortableSectionItem({
   section,
   sectionIndex,
+  sectionCount,
+  onMoveSection,
   onRemoveSection,
   children,
 }: {
   section: Section
   sectionIndex: number
+  sectionCount: number
+  onMoveSection: (index: number, direction: -1 | 1) => void
   onRemoveSection: (index: number) => void
   children: React.ReactNode
 }) {
+  const label = section.title?.trim() || section.key || `section ${sectionIndex + 1}`
   const {
     attributes,
     listeners,
@@ -84,10 +124,18 @@ function SortableSectionItem({
             {section.title || section.key}
           </h4>
         </div>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap items-center gap-1">
+          <ReorderButtons
+            label={label}
+            index={sectionIndex}
+            count={sectionCount}
+            onMove={(direction) => onMoveSection(sectionIndex, direction)}
+          />
           <button
+            type="button"
             onClick={() => onRemoveSection(sectionIndex)}
-            className="p-1 text-red-600 hover:text-red-700"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center text-red-600 hover:text-red-700"
+            aria-label={`Remove ${label}`}
             title="Remove section"
           >
             <Trash2 className="w-4 h-4" />
@@ -103,16 +151,21 @@ function SortableSectionItem({
 function SortableCardItem({
   card,
   cardIndex,
+  cardCount,
   sectionIndex,
+  onMove,
   onEdit,
   onRemove,
 }: {
   card: Card
   cardIndex: number
+  cardCount: number
   sectionIndex: number
+  onMove: (sectionIndex: number, cardIndex: number, direction: -1 | 1) => void
   onEdit: (sectionIndex: number, cardIndex: number) => void
   onRemove: (sectionIndex: number, cardIndex: number) => void
 }) {
+  const label = ('title' in card && card.title?.trim()) || `card ${cardIndex + 1}`
   const {
     attributes,
     listeners,
@@ -155,23 +208,33 @@ function SortableCardItem({
           <div className="text-xs text-wsu-text-muted">{card.type}</div>
         </div>
       </div>
-      <div className="flex gap-1">
+      <div className="flex flex-wrap items-center gap-1">
+        <ReorderButtons
+          label={label}
+          index={cardIndex}
+          count={cardCount}
+          onMove={(direction) => onMove(sectionIndex, cardIndex, direction)}
+        />
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             onEdit(sectionIndex, cardIndex)
           }}
-          className="p-1 text-wsu-crimson hover:text-wsu-crimson-dark"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center text-wsu-crimson hover:text-wsu-crimson-dark"
+          aria-label={`Edit ${label}`}
           title="Edit card"
         >
           <Edit2 className="w-4 h-4" />
         </button>
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             onRemove(sectionIndex, cardIndex)
           }}
-          className="p-1 text-red-600 hover:text-red-700"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center text-red-600 hover:text-red-700"
+          aria-label={`Remove ${label}`}
           title="Remove card"
         >
           <Trash2 className="w-4 h-4" />
@@ -185,16 +248,21 @@ function SortableCardItem({
 function SortableClosureItem({
   closure,
   closureIndex,
+  closureCount,
   sectionIndex,
+  onMove,
   onEdit,
   onRemove,
 }: {
   closure: Closure
   closureIndex: number
+  closureCount: number
   sectionIndex: number
+  onMove: (sectionIndex: number, closureIndex: number, direction: -1 | 1) => void
   onEdit: (sectionIndex: number, closureIndex: number) => void
   onRemove: (sectionIndex: number, closureIndex: number) => void
 }) {
+  const label = closure.date?.trim() || closure.reason?.trim() || 'untitled closure'
   const {
     attributes,
     listeners,
@@ -237,23 +305,33 @@ function SortableClosureItem({
           </div>
         </div>
       </div>
-      <div className="flex gap-1">
+      <div className="flex flex-wrap items-center gap-1">
+        <ReorderButtons
+          label={label}
+          index={closureIndex}
+          count={closureCount}
+          onMove={(direction) => onMove(sectionIndex, closureIndex, direction)}
+        />
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             onEdit(sectionIndex, closureIndex)
           }}
-          className="p-1 text-wsu-crimson hover:text-wsu-crimson-dark"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center text-wsu-crimson hover:text-wsu-crimson-dark"
+          aria-label={`Edit ${label}`}
           title="Edit closure"
         >
           <Edit2 className="w-4 h-4" />
         </button>
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             onRemove(sectionIndex, closureIndex)
           }}
-          className="p-1 text-red-600 hover:text-red-700"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center text-red-600 hover:text-red-700"
+          aria-label={`Remove ${label}`}
           title="Remove closure"
         >
           <Trash2 className="w-4 h-4" />
@@ -416,6 +494,38 @@ export default function SectionsEditor({
       },
       true
     )
+  }
+
+  const moveSection = (index: number, direction: -1 | 1) => {
+    updateState((prev) => {
+      const next = index + direction
+      if (next < 0 || next >= prev.sections.length) return prev
+      return { ...prev, sections: arrayMove([...prev.sections], index, next) }
+    }, true)
+  }
+
+  const moveCard = (sectionIndex: number, cardIndex: number, direction: -1 | 1) => {
+    updateState((prev) => {
+      const section = prev.sections[sectionIndex]
+      const cards = section?.cards
+      const next = cardIndex + direction
+      if (!cards || next < 0 || next >= cards.length) return prev
+      const sections = [...prev.sections]
+      sections[sectionIndex] = { ...section, cards: arrayMove([...cards], cardIndex, next) }
+      return { ...prev, sections }
+    }, true)
+  }
+
+  const moveClosure = (sectionIndex: number, closureIndex: number, direction: -1 | 1) => {
+    updateState((prev) => {
+      const section = prev.sections[sectionIndex]
+      const closures = section?.closures
+      const next = closureIndex + direction
+      if (!closures || next < 0 || next >= closures.length) return prev
+      const sections = [...prev.sections]
+      sections[sectionIndex] = { ...section, closures: arrayMove([...closures], closureIndex, next) }
+      return { ...prev, sections }
+    }, true)
   }
 
   const updateSection = (index: number, section: Section) => {
@@ -813,6 +923,7 @@ export default function SectionsEditor({
   return (
     <>
       <DndContext
+        id="slate-sections"
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragEnd={handleSectionDragEnd}
@@ -827,6 +938,8 @@ export default function SectionsEditor({
                     key={section.key || `section-${sectionIndex}`}
                     section={section}
                     sectionIndex={sectionIndex}
+                    sectionCount={sections.length}
+                    onMoveSection={moveSection}
                     onRemoveSection={removeSection}
                   >
                 <div className="space-y-2">
@@ -855,6 +968,7 @@ export default function SectionsEditor({
                       </div>
                       {section.closures && section.closures.length > 0 ? (
                         <DndContext
+                          id={`slate-closures-${sectionIndex}`}
                           sensors={sensors}
                           collisionDetection={closestCenter}
                           onDragEnd={(event) => handleClosureDragEnd(event, sectionIndex)}
@@ -873,7 +987,9 @@ export default function SectionsEditor({
                                     key={closureKey}
                                     closure={closure}
                                     closureIndex={closureIndex}
+                                    closureCount={section.closures?.length ?? 0}
                                     sectionIndex={sectionIndex}
+                                    onMove={moveClosure}
                                     onEdit={editClosure}
                                     onRemove={removeClosure}
                                   />
@@ -913,6 +1029,7 @@ export default function SectionsEditor({
                         Cards ({section.cards.length})
                       </div>
                       <DndContext
+                        id={`slate-cards-${sectionIndex}`}
                         sensors={sensors}
                         collisionDetection={closestCenter}
                         onDragEnd={(event) => handleCardDragEnd(event, sectionIndex)}
@@ -932,7 +1049,9 @@ export default function SectionsEditor({
                                   key={cardKey}
                                   card={card}
                                   cardIndex={cardIndex}
+                                  cardCount={section.cards?.length ?? 0}
                                   sectionIndex={sectionIndex}
+                                  onMove={moveCard}
                                   onEdit={editCard}
                                   onRemove={removeCard}
                                 />

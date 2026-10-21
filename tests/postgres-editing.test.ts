@@ -14,9 +14,11 @@ import {
   createSession,
   principalFromToken,
   revokeSession,
+  SESSION_COOKIE,
   updateUserAccess,
 } from '@/lib/auth/session-store'
 import { POST as localSession } from '@/app/api/auth/local/session/route'
+import { DELETE as purgeRoute } from '@/app/api/newsletters/[id]/purge/route'
 import { closePool, getPool } from '@/lib/db/pool'
 import {
   acquireLease,
@@ -48,6 +50,41 @@ let databaseUrl = ''
 
 function titled(content: NewsletterData, title: string): NewsletterData {
   return { ...content, masthead: { ...content.masthead, title } }
+}
+
+function purgeRequest(token: string, id: string) {
+  return new Request(`http://localhost/api/newsletters/${id}/purge`, {
+    method: 'DELETE',
+    headers: { cookie: `${SESSION_COOKIE}=${token}`, origin: 'http://localhost' },
+  })
+}
+
+async function dependentCount(id: string) {
+  const receipts = await getPool().query<{ count: string }>(
+    'SELECT count(*)::text AS count FROM newsletter_save_receipts WHERE newsletter_id = $1',
+    [id],
+  )
+  const recovery = await getPool().query<{ count: string }>(
+    'SELECT count(*)::text AS count FROM newsletter_recovery_drafts WHERE newsletter_id = $1',
+    [id],
+  )
+  const revisions = await getPool().query<{ count: string }>(
+    'SELECT count(*)::text AS count FROM newsletter_revisions WHERE newsletter_id = $1',
+    [id],
+  )
+  return {
+    receipts: Number(receipts.rows[0].count),
+    recovery: Number(recovery.rows[0].count),
+    revisions: Number(revisions.rows[0].count),
+  }
+}
+
+async function auditCount(id: string) {
+  const result = await getPool().query<{ count: string }>(
+    'SELECT count(*)::text AS count FROM newsletter_purge_events WHERE newsletter_id = $1',
+    [id],
+  )
+  return Number(result.rows[0].count)
 }
 
 async function editor(name: string, email: string | null = null) {
@@ -98,7 +135,7 @@ afterAll(async () => {
 test('migrations apply once, fail closed, and serialize', async () => {
   await migrateDatabase(databaseUrl)
   const applied = await getPool().query('SELECT count(*)::text AS count FROM schema_migrations')
-  expect(Number(applied.rows[0].count)).toBe(2)
+  expect(Number(applied.rows[0].count)).toBe(3)
 
   await server.createDatabase('slate_editor_race')
   const raceUrl = 'postgresql://postgres:password@127.0.0.1:55432/slate_editor_race'
@@ -107,7 +144,7 @@ test('migrations apply once, fail closed, and serialize', async () => {
   await client.connect()
   const raced = await client.query('SELECT count(*)::text AS count FROM schema_migrations')
   await client.end()
-  expect(Number(raced.rows[0].count)).toBe(2)
+  expect(Number(raced.rows[0].count)).toBe(3)
 
   const missing = spawnSync(process.execPath, ['scripts/migrate.mjs'], {
     env: { ...process.env, DATABASE_URL: '' },
@@ -432,23 +469,57 @@ test('a library delete removes a draft and leaves one another editor is using', 
 
 test('permanent deletion only purges archived newsletters and their history', async () => {
   const ada = await editor('Ada Purge')
-  const created = await createNewsletter(ada, 'ff')
-  await expect(purgeArchivedNewsletter(created.id)).rejects.toMatchObject({
-    code: 'archived',
+  const admin = await createProvisionedUser({
+    displayName: 'Admin Purge',
+    email: null,
+    role: 'administrator',
+    issuer: 'https://issuer.test',
+    subject: `admin-purge-${crypto.randomUUID()}`,
   })
+  const created = await createNewsletter(ada, 'ff')
+  await getPool().query(
+    `INSERT INTO newsletter_save_receipts (
+       id, newsletter_id, client_save_id, actor_id, base_version, request_fingerprint, committed_version
+     ) VALUES ($1, $2, 'seed-save', $3, 1, 'seed-fingerprint', 1)`,
+    [crypto.randomUUID(), created.id, ada],
+  )
+  await getPool().query(
+    `INSERT INTO newsletter_recovery_drafts (newsletter_id, user_id, snapshot, base_version)
+     VALUES ($1, $2, '{"seed":true}'::jsonb, 1)`,
+    [created.id, ada],
+  )
+  await expect(purgeArchivedNewsletter(created.id, admin)).rejects.toMatchObject({ code: 'not_archived' })
   expect(await getNewsletter(created.id)).not.toBeNull()
+  expect(await auditCount(created.id)).toBe(0)
 
   await discardNewsletter(created.id, ada)
-  expect((await listRevisions(created.id)).length).toBeGreaterThan(0)
-  await expect(purgeArchivedNewsletter(created.id)).resolves.toEqual({
-    id: created.id,
-    deleted: true,
+  const editorSession = await createSession(ada)
+  const forbidden = await purgeRoute(purgeRequest(editorSession.token, created.id), {
+    params: Promise.resolve({ id: created.id }),
   })
+  expect(forbidden.status).toBe(403)
+  expect(await getNewsletter(created.id)).not.toBeNull()
+  expect(await dependentCount(created.id)).toEqual({ receipts: 1, recovery: 1, revisions: expect.any(Number) })
+  expect((await dependentCount(created.id)).revisions).toBeGreaterThan(0)
+  expect(await auditCount(created.id)).toBe(0)
+
+  const adminSession = await createSession(admin)
+  const purged = await purgeRoute(purgeRequest(adminSession.token, created.id), {
+    params: Promise.resolve({ id: created.id }),
+  })
+  expect(purged.status).toBe(200)
   expect(await getNewsletter(created.id)).toBeNull()
-  expect(await listRevisions(created.id)).toEqual([])
-  await expect(purgeArchivedNewsletter(created.id)).rejects.toMatchObject({
-    code: 'not_found',
+  expect(await dependentCount(created.id)).toEqual({ receipts: 0, recovery: 0, revisions: 0 })
+  const audit = await getPool().query<{ title: string; actor_id: string }>(
+    'SELECT title, actor_id FROM newsletter_purge_events WHERE newsletter_id = $1',
+    [created.id],
+  )
+  expect(audit.rows).toEqual([{ title: 'Friday Focus Newsletter', actor_id: admin }])
+  const missing = await purgeRoute(purgeRequest(adminSession.token, created.id), {
+    params: Promise.resolve({ id: created.id }),
   })
+  expect(missing.status).toBe(404)
+  expect(await auditCount(created.id)).toBe(1)
 })
 
 test('resuming a tab revalidates its lease and returns the current version and content', async () => {

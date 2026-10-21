@@ -29,10 +29,10 @@ await migrateDatabase(databaseUrl)
 
 const client = new pg.Client({ connectionString: databaseUrl })
 await client.connect()
-for (const account of [accounts.editorA, accounts.editorB]) {
+for (const account of [accounts.editorA, accounts.editorB, accounts.administrator]) {
   await client.query(
-    `INSERT INTO users (id, display_name, email, role) VALUES ($1, $2, $3, 'editor')`,
-    [account.id, account.name, `${account.subject}@example.edu`]
+    `INSERT INTO users (id, display_name, email, role) VALUES ($1, $2, $3, $4)`,
+    [account.id, account.name, `${account.subject}@example.edu`, account === accounts.administrator ? 'administrator' : 'editor']
   )
   await client.query(
     `INSERT INTO user_identities (id, user_id, issuer, subject) VALUES ($1, $2, $3, $4)`,

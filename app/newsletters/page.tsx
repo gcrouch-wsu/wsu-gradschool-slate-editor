@@ -254,7 +254,7 @@ export default function NewsletterLibraryPage() {
       </p>
       <div className="flex flex-wrap gap-3 mb-4">
         <button
-          className={secondaryButton}
+          className={archived ? secondaryButton : primaryButton}
           type="button"
           aria-pressed={!archived}
           disabled={busy !== null}
@@ -263,7 +263,7 @@ export default function NewsletterLibraryPage() {
           Active drafts
         </button>
         <button
-          className={secondaryButton}
+          className={archived ? primaryButton : secondaryButton}
           type="button"
           aria-pressed={archived}
           disabled={busy !== null}
@@ -317,7 +317,7 @@ export default function NewsletterLibraryPage() {
       {loadedView === archived && newsletters.length === 0 && !loadError && (
         <p className="text-wsu-text-muted">
           {archived
-            ? 'No archived drafts. Deleted drafts appear here and can be restored.'
+            ? 'No archived drafts. Deleted drafts appear here and can be restored. An administrator can permanently delete an archived draft, and that cannot be undone.'
             : 'No drafts yet. Choose New Friday Focus, New Briefing, New Slate Campaign, or Import HTML above.'}
         </p>
       )}
@@ -368,15 +368,17 @@ export default function NewsletterLibraryPage() {
                       >
                         Restore draft
                       </button>
-                      <button
-                        className={`${button} text-red-800 bg-white border-2 border-red-700 hover:bg-red-50`}
-                        disabled={busy !== null}
-                        type="button"
-                        aria-describedby={`title-${newsletter.id}`}
-                        onClick={() => setPendingPurge(newsletter)}
-                      >
-                        Delete permanently
-                      </button>
+                      {user?.role === 'administrator' && (
+                        <button
+                          className={`${button} text-red-800 bg-white border-2 border-red-700 hover:bg-red-50`}
+                          disabled={busy !== null}
+                          type="button"
+                          aria-describedby={`title-${newsletter.id}`}
+                          onClick={() => setPendingPurge(newsletter)}
+                        >
+                          Delete permanently
+                        </button>
+                      )}
                     </>
                   ) : (
                     <button

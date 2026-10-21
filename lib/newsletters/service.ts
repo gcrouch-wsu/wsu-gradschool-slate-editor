@@ -10,7 +10,7 @@ const LEASE_SECONDS = 180
 
 export class EditConflictError extends Error {
   constructor(
-    public code: 'version' | 'lease' | 'fingerprint' | 'archived' | 'not_found',
+    public code: 'version' | 'lease' | 'fingerprint' | 'archived' | 'not_archived' | 'not_found',
     message: string,
   ) {
     super(message)
@@ -615,14 +615,14 @@ export async function restoreArchivedNewsletter(id: string, userId: string, pool
   )
 }
 
-export async function purgeArchivedNewsletter(id: string, pool: Pool = getPool()) {
+export async function purgeArchivedNewsletter(id: string, userId: string, pool: Pool = getPool()) {
   return withNewsletterLock(
     id,
     async (client) => {
       const row = await loadRow(client, id)
       if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
       if (!row.archived_at) {
-        throw new EditConflictError('archived', 'Only archived drafts can be permanently deleted.')
+        throw new EditConflictError('not_archived', 'Only archived drafts can be permanently deleted.')
       }
       // Revisions and retry/recovery records intentionally survive soft archive,
       // but must be removed in this transaction before their parent row.
@@ -631,6 +631,11 @@ export async function purgeArchivedNewsletter(id: string, pool: Pool = getPool()
       await client.query('DELETE FROM newsletter_revisions WHERE newsletter_id = $1', [id])
       const deleted = await client.query('DELETE FROM newsletters WHERE id = $1 AND archived_at IS NOT NULL', [id])
       if (deleted.rowCount !== 1) throw new EditConflictError('version', 'This draft could not be deleted.')
+      await client.query(
+        `INSERT INTO newsletter_purge_events (id, newsletter_id, title, actor_id)
+         VALUES ($1, $2, $3, $4)`,
+        [crypto.randomUUID(), id, row.title, userId],
+      )
       return { id, deleted: true }
     },
     pool,
