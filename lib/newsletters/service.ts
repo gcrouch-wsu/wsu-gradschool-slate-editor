@@ -467,6 +467,34 @@ export async function archiveNewsletter(
   return mutateWithLease(id, { ...input, action: 'archive', next: current.content, archive: true }, pool)
 }
 
+export async function discardNewsletter(id: string, userId: string, pool: Pool = getPool()) {
+  return withNewsletterLock(id, async (client) => {
+    const row = await loadRow(client, id)
+    if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
+    if (row.archived_at) throw new EditConflictError('archived', 'This newsletter is archived.')
+    if (leaseActive(row) && row.lease_holder_user_id !== userId) {
+      const holder = row.lease_holder_name ?? 'another editor'
+      throw new EditConflictError('lease', `This draft is being edited by ${holder}.`)
+    }
+    const content = normalizeNewsletter(row.content)
+    const updated = await client.query(
+      `UPDATE newsletters
+       SET archived_at = now(),
+           save_version = save_version + 1,
+           updated_by = $2::uuid,
+           updated_at = now(),
+           lease_token_hash = NULL,
+           lease_holder_user_id = NULL,
+           lease_expires_at = NULL
+       WHERE id = $1 AND archived_at IS NULL`,
+      [id, userId]
+    )
+    if (updated.rowCount !== 1) throw new EditConflictError('version', 'This draft could not be deleted.')
+    await appendRevision(client, id, content, userId, 'archive')
+    return { id, archived: true }
+  }, pool)
+}
+
 export async function duplicateNewsletter(id: string, userId: string, pool: Pool = getPool()) {
   const current = await getNewsletter(id, pool)
   if (!current) throw new EditConflictError('not_found', 'Newsletter not found.')

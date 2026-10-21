@@ -22,9 +22,11 @@ import {
   acquireLease,
   archiveNewsletter,
   createNewsletter,
+  discardNewsletter,
   EditConflictError,
   getNewsletter,
   importNewsletterDraft,
+  listNewsletters,
   listRevisions,
   releaseLease,
   renewLease,
@@ -361,6 +363,24 @@ test('lifecycle operations rotate or clear lease authority and keep history', as
   expect(history.map((revision) => revision.action)).toEqual(
     expect.arrayContaining(['create', 'template_replacement', 'restore', 'archive'])
   )
+})
+
+test('a library delete removes a draft and leaves one another editor is using', async () => {
+  const ada = await editor('Ada Delete')
+  const grace = await editor('Grace Delete')
+  const created = await createNewsletter(ada, 'ff')
+  const held = await createNewsletter(ada, 'briefing')
+  const owned = await createNewsletter(ada, 'letter')
+  await acquireLease(held.id, grace)
+  await acquireLease(owned.id, ada)
+  await expect(discardNewsletter(held.id, ada)).rejects.toBeInstanceOf(EditConflictError)
+  expect((await listNewsletters()).map((item) => item.id)).toContain(held.id)
+  await discardNewsletter(created.id, ada)
+  await discardNewsletter(owned.id, ada)
+  const visible = (await listNewsletters()).map((item) => item.id)
+  expect(visible).not.toContain(created.id)
+  expect(visible).not.toContain(owned.id)
+  expect((await getNewsletter(created.id))?.summary.archived).toBe(true)
 })
 
 test('local accounts sign in with a password and keep the hash', async () => {

@@ -28,7 +28,14 @@ export default function NewsletterEditorPage() {
         if (!cancelled) setError('This newsletter is unavailable.')
         return
       }
-      const body = (await newsletter.json()) as { content: NewsletterData; summary: { saveVersion: number } }
+      const body = (await newsletter.json()) as {
+        content: NewsletterData
+        summary: { saveVersion: number; archived: boolean }
+      }
+      if (body.summary.archived) {
+        if (!cancelled) setError('This draft was deleted.')
+        return
+      }
       if (!cancelled) {
         setLoaded({
           userId: sessionBody.user.userId,
