@@ -28,6 +28,7 @@ import {
   importNewsletterDraft,
   listNewsletters,
   listRevisions,
+  purgeArchivedNewsletter,
   releaseLease,
   renewLease,
   resumeLease,
@@ -427,6 +428,27 @@ test('a library delete removes a draft and leaves one another editor is using', 
   await restoreArchivedNewsletter(created.id, ada)
   await expect(renewLease(created.id, grace, lease.token)).resolves.toMatchObject({ renewed: true })
   expect((await listRevisions(created.id)).filter((item) => item.action === 'unarchive')).toHaveLength(1)
+})
+
+test('permanent deletion only purges archived newsletters and their history', async () => {
+  const ada = await editor('Ada Purge')
+  const created = await createNewsletter(ada, 'ff')
+  await expect(purgeArchivedNewsletter(created.id)).rejects.toMatchObject({
+    code: 'archived',
+  })
+  expect(await getNewsletter(created.id)).not.toBeNull()
+
+  await discardNewsletter(created.id, ada)
+  expect((await listRevisions(created.id)).length).toBeGreaterThan(0)
+  await expect(purgeArchivedNewsletter(created.id)).resolves.toEqual({
+    id: created.id,
+    deleted: true,
+  })
+  expect(await getNewsletter(created.id)).toBeNull()
+  expect(await listRevisions(created.id)).toEqual([])
+  await expect(purgeArchivedNewsletter(created.id)).rejects.toMatchObject({
+    code: 'not_found',
+  })
 })
 
 test('resuming a tab revalidates its lease and returns the current version and content', async () => {

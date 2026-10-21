@@ -112,6 +112,20 @@ test('delete waits safely, refuses another holder, and supports Undo and archive
   await expect(page.getByTestId('save-status')).toHaveText('Saved')
   await page.getByRole('button', { name: 'Save and finish editing', exact: true }).click()
   await expect(page.getByTestId('save-status')).toHaveText('View only')
+  await page.getByRole('link', { name: 'All newsletters', exact: true }).click()
+  await expect(page).toHaveURL(/\/newsletters$/)
+  const purgeId = await create(context, 'briefing')
+  await context.request.delete(`/api/newsletters/${purgeId}`, {
+    headers: { Origin: 'http://127.0.0.1:3100' },
+  })
+  await page.getByRole('button', { name: 'Archived drafts', exact: true }).click()
+  await expect(row(page, purgeId)).toBeVisible()
+  await row(page, purgeId).getByRole('button', { name: 'Delete permanently', exact: true }).click()
+  const purgeDialog = page.getByRole('alertdialog')
+  await expect(purgeDialog).toContainText('cannot be undone')
+  await purgeDialog.getByRole('button', { name: 'Delete permanently', exact: true }).click()
+  await expect(row(page, purgeId)).toHaveCount(0)
+  expect((await context.request.get(`/api/newsletters/${purgeId}`)).status()).toBe(404)
   await other.close()
 })
 

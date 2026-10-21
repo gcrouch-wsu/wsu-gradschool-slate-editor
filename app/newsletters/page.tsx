@@ -52,6 +52,7 @@ export default function NewsletterLibraryPage() {
   const requestSequence = useRef(0)
   const [refreshing, setRefreshing] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Summary | null>(null)
+  const [pendingPurge, setPendingPurge] = useState<Summary | null>(null)
   const [lastDeleted, setLastDeleted] = useState<Summary | null>(null)
   const [notice, setNotice] = useState('')
 
@@ -148,6 +149,28 @@ export default function NewsletterLibraryPage() {
       })
     } finally {
       setPendingDelete(null)
+      end()
+      void refresh()
+    }
+  }
+  async function confirmPurge() {
+    if (!pendingPurge || !begin('Deleting permanently…')) return
+    const target = pendingPurge
+    try {
+      await requestJson(`/api/newsletters/${target.id}/purge`, {
+        method: 'DELETE',
+      })
+      ++requestSequence.current
+      setNewsletters((current) => current.filter((item) => item.id !== target.id))
+      setLastDeleted(null)
+      setNotice(`“${target.title}” and its saved versions were permanently deleted.`)
+    } catch (failure) {
+      setRowError({
+        id: target.id,
+        message: `${errorMessage(failure)} The draft was not removed. Refresh to check its current status.`,
+      })
+    } finally {
+      setPendingPurge(null)
       end()
       void refresh()
     }
@@ -335,15 +358,26 @@ export default function NewsletterLibraryPage() {
                     Open
                   </Link>
                   {archived ? (
-                    <button
-                      className={secondaryButton}
-                      disabled={busy !== null}
-                      type="button"
-                      aria-describedby={`title-${newsletter.id}`}
-                      onClick={() => void restore(newsletter)}
-                    >
-                      Restore draft
-                    </button>
+                    <>
+                      <button
+                        className={secondaryButton}
+                        disabled={busy !== null}
+                        type="button"
+                        aria-describedby={`title-${newsletter.id}`}
+                        onClick={() => void restore(newsletter)}
+                      >
+                        Restore draft
+                      </button>
+                      <button
+                        className={`${button} text-red-800 bg-white border-2 border-red-700 hover:bg-red-50`}
+                        disabled={busy !== null}
+                        type="button"
+                        aria-describedby={`title-${newsletter.id}`}
+                        onClick={() => setPendingPurge(newsletter)}
+                      >
+                        Delete permanently
+                      </button>
+                    </>
                   ) : (
                     <button
                       className={`${button} text-red-800 bg-white border-2 border-red-700 hover:bg-red-50`}
@@ -381,6 +415,24 @@ export default function NewsletterLibraryPage() {
         onConfirm={() => void confirmDelete()}
         onCancel={() => {
           if (!busyRef.current) setPendingDelete(null)
+        }}
+      />
+      <ConfirmModal
+        isOpen={pendingPurge !== null}
+        variant="danger"
+        title="Permanently delete this archived draft?"
+        message={
+          pendingPurge
+            ? `“${pendingPurge.title}”, its revision history, and recovery data will be permanently removed. This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete permanently"
+        cancelLabel="Keep archived draft"
+        busy={busy === 'Deleting permanently…'}
+        busyLabel="Deleting permanently…"
+        onConfirm={() => void confirmPurge()}
+        onCancel={() => {
+          if (!busyRef.current) setPendingPurge(null)
         }}
       />
     </main>
