@@ -14,6 +14,8 @@ interface ConfirmModalProps {
   onConfirm: () => void
   onCancel: () => void
   variant?: 'danger' | 'warning' | 'info'
+  busy?: boolean
+  busyLabel?: string
 }
 
 export default function ConfirmModal({
@@ -25,6 +27,8 @@ export default function ConfirmModal({
   onConfirm,
   onCancel,
   variant = 'warning',
+  busy = false,
+  busyLabel = 'Working…',
 }: ConfirmModalProps) {
   const modalRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -38,18 +42,23 @@ export default function ConfirmModal({
     if (!modalEl) return
     const getFocusable = () =>
       modalEl.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
       )
     const focusable = getFocusable()
     if (focusable.length > 0) focusable[0].focus()
+    else modalEl.focus()
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onCancel()
+        if (!busy) onCancel()
         return
       }
       if (e.key !== 'Tab') return
       const elements = getFocusable()
-      if (elements.length === 0) return
+      if (elements.length === 0) {
+        e.preventDefault()
+        modalEl.focus()
+        return
+      }
       const first = elements[0]
       const last = elements[elements.length - 1]
       if (e.shiftKey && document.activeElement === first) {
@@ -65,7 +74,7 @@ export default function ConfirmModal({
       document.removeEventListener('keydown', handleKeyDown)
       previouslyFocused?.focus()
     }
-  }, [isOpen, onCancel])
+  }, [isOpen, onCancel, busy])
 
   if (!isOpen) return null
 
@@ -91,10 +100,12 @@ export default function ConfirmModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div
         ref={modalRef}
+        tabIndex={-1}
         role={dialogRole}
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descId}
+        aria-busy={busy}
         className="bg-white rounded-lg max-w-md w-full shadow-xl"
       >
         <div className="p-6">
@@ -106,26 +117,31 @@ export default function ConfirmModal({
               <h3 id={titleId} className="text-lg font-semibold text-wsu-text-dark mb-2">
                 {title}
               </h3>
-              <p id={descId} className="text-sm text-wsu-text-body">{message}</p>
+              <p id={descId} className="text-sm text-wsu-text-body">
+                {message}
+              </p>
             </div>
           </div>
         </div>
         <div className="px-6 py-4 bg-wsu-bg-light border-t border-wsu-border-light flex justify-end gap-3 rounded-b-lg">
           <button
+            type="button"
+            disabled={busy}
             onClick={onCancel}
             className="px-4 py-2 text-sm font-medium text-wsu-text-muted border border-wsu-border-light rounded-md hover:bg-white transition-colors"
           >
             {cancelLabel}
           </button>
           <button
+            type="button"
+            disabled={busy}
             onClick={onConfirm}
             className={`px-4 py-2 text-sm font-medium text-white ${styles.confirmBg} rounded-md transition-colors`}
           >
-            {confirmLabel}
+            {busy ? busyLabel : confirmLabel}
           </button>
         </div>
       </div>
     </div>
   )
 }
-

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { isPrincipal, requireEditor } from '@/lib/auth/guard'
 import { jsonError } from '@/lib/http'
-import { acquireLease, releaseLease, renewLease, takeoverLease } from '@/lib/newsletters/service'
+import { acquireLease, releaseLease, renewLease, resumeLease, takeoverLease } from '@/lib/newsletters/service'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,6 +14,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const body = (await request.json()) as { action?: string; token?: string }
     if (body.action === 'acquire') {
       return NextResponse.json(await acquireLease(id, principal.userId))
+    }
+    if (body.action === 'resume' && typeof body.token === 'string') {
+      return NextResponse.json(await resumeLease(id, principal.userId, body.token))
     }
     if (body.action === 'takeover') {
       return NextResponse.json(await takeoverLease(id, principal.userId))

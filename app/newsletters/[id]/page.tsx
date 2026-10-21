@@ -1,63 +1,130 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import Link from 'next/link'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import SharedNewsletterEditor from '@/components/SharedNewsletterEditor'
+import { errorMessage, RequestError, requestJson } from '@/lib/client/request'
 import type { NewsletterData } from '@/types/newsletter'
 
 export default function NewsletterEditorPage() {
   const params = useParams<{ id: string }>()
+  return <DraftLoader key={params.id} newsletterId={params.id} />
+}
+
+function DraftLoader({ newsletterId }: { newsletterId: string }) {
+  const router = useRouter()
+  const routerRef = useRef(router)
+  useEffect(() => {
+    routerRef.current = router
+  }, [router])
   const [loaded, setLoaded] = useState<{
     userId: string
     content: NewsletterData
     saveVersion: number
   } | null>(null)
   const [error, setError] = useState('')
-
+  const [deleted, setDeleted] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      try {
+        const [session, newsletter] = await Promise.all([
+          requestJson<{ user: { userId: string } }>('/api/auth/session', {
+            signal,
+          }),
+          requestJson<{
+            content: NewsletterData
+            summary: { saveVersion: number; archived: boolean }
+          }>(`/api/newsletters/${newsletterId}`, { signal }),
+        ])
+        if (signal.aborted) return
+        setDeleted(newsletter.summary.archived)
+        if (!newsletter.summary.archived)
+          setLoaded({
+            userId: session.user.userId,
+            content: newsletter.content,
+            saveVersion: newsletter.summary.saveVersion,
+          })
+      } catch (failure) {
+        if (signal.aborted) return
+        if (failure instanceof RequestError && failure.status === 401)
+          routerRef.current.replace(`/sign-in?next=/newsletters/${newsletterId}`)
+        else setError(errorMessage(failure))
+      }
+    },
+    [newsletterId],
+  )
   useEffect(() => {
-    let cancelled = false
-    async function load() {
-      const session = await fetch('/api/auth/session')
-      if (session.status === 401) {
-        window.location.href = `/sign-in?next=/newsletters/${params.id}`
-        return
-      }
-      const sessionBody = (await session.json()) as { user: { userId: string } }
-      const newsletter = await fetch(`/api/newsletters/${params.id}`)
-      if (!newsletter.ok) {
-        if (!cancelled) setError('This newsletter is unavailable.')
-        return
-      }
-      const body = (await newsletter.json()) as {
-        content: NewsletterData
-        summary: { saveVersion: number; archived: boolean }
-      }
-      if (body.summary.archived) {
-        if (!cancelled) setError('This draft was deleted.')
-        return
-      }
-      if (!cancelled) {
-        setLoaded({
-          userId: sessionBody.user.userId,
-          content: body.content,
-          saveVersion: body.summary.saveVersion,
-        })
-      }
+    const controller = new AbortController()
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) void load(controller.signal)
+    })
+    return () => controller.abort()
+  }, [load, attempt])
+  async function restore() {
+    setRestoring(true)
+    setError('')
+    try {
+      await requestJson(`/api/newsletters/${newsletterId}/restore`, {
+        method: 'POST',
+      })
+      setDeleted(false)
+      setAttempt((current) => current + 1)
+    } catch (failure) {
+      setError(errorMessage(failure))
+    } finally {
+      setRestoring(false)
     }
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [params.id])
-
-  if (error) return <main className="p-6">{error}</main>
-  if (!loaded) return <main className="p-6">Loading newsletter…</main>
+  }
+  if (loaded && !deleted)
+    return (
+      <SharedNewsletterEditor
+        newsletterId={newsletterId}
+        userId={loaded.userId}
+        initialContent={loaded.content}
+        initialVersion={loaded.saveVersion}
+      />
+    )
   return (
-    <SharedNewsletterEditor
-      newsletterId={params.id}
-      userId={loaded.userId}
-      initialContent={loaded.content}
-      initialVersion={loaded.saveVersion}
-    />
+    <main className="max-w-xl mx-auto p-6 space-y-4">
+      <Link className="inline-flex min-h-11 items-center text-wsu-crimson font-semibold underline" href="/newsletters">
+        All newsletters
+      </Link>
+      {deleted ? (
+        <>
+          <h1 className="text-2xl font-semibold">This draft was deleted.</h1>
+          <p>It is archived. Its saved content and revision history are kept.</p>
+          <button
+            type="button"
+            disabled={restoring}
+            className="bg-wsu-crimson text-white rounded px-4 py-3"
+            onClick={() => void restore()}
+          >
+            {restoring ? 'Restoring draft…' : 'Restore draft'}
+          </button>
+        </>
+      ) : (
+        !error && <p role="status">Loading newsletter…</p>
+      )}
+      {error && (
+        <div role="alert">
+          <p>{error}</p>
+          {!deleted && (
+            <button
+              type="button"
+              className="underline font-semibold mt-3"
+              onClick={() => {
+                setError('')
+                setAttempt((current) => current + 1)
+              }}
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+    </main>
   )
 }

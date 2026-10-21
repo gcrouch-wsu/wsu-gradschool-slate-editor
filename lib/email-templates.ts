@@ -45,10 +45,10 @@ import type {
 
 /**
  * Escapes HTML special characters to prevent XSS attacks and ensure valid HTML.
- * 
+ *
  * Converts: & < > " ' to their HTML entity equivalents.
  * This is critical for user-generated content that will be rendered in emails.
- * 
+ *
  * @param text - Text to escape (can be null or undefined)
  * @returns Escaped HTML string (empty string if input is null/undefined)
  */
@@ -115,14 +115,14 @@ function getAccentBarStyle(settings: Settings | null): string {
 
 /**
  * Processes rich text HTML to add email-compatible table styles.
- * 
+ *
  * Email clients have limited CSS support and strip out <style> tags, so all styles
  * must be inline. This function wraps table content in email-safe table structures
  * and applies inline styles for borders, fonts, and formatting.
- * 
+ *
  * Also processes list styles via processListStyles() to preserve editor-applied
  * line-height and margin-bottom values.
- * 
+ *
  * @param html - Rich text HTML from Tiptap editor
  * @param tableOptions - Optional styling options for tables
  * @returns HTML string with email-safe inline styles
@@ -136,7 +136,7 @@ function processBodyHtmlForEmail(
     headerBgColor?: string
     headerUnderline?: number
     headerUnderlineColor?: string
-  }
+  },
 ): string {
   if (!html || !html.includes('<table')) {
     return html
@@ -153,91 +153,61 @@ function processBodyHtmlForEmail(
   const headerUnderlineColor = cssHex(tableOptions?.headerUnderlineColor, borderColor)
 
   // Calculate border width based on style
-  const borderWidth =
-    borderStyle === 'none'
-      ? 0
-      : borderStyle === 'light'
-        ? 1
-        : borderStyle === 'medium'
-          ? 2
-          : 3
+  const borderWidth = borderStyle === 'none' ? 0 : borderStyle === 'light' ? 1 : borderStyle === 'medium' ? 2 : 3
 
   // Add styles to tables, table rows, and table cells
   let processed = html
 
   // Style tables: add border-collapse, width, and email-safe attributes
-  const tableBorderStyle =
-    borderWidth > 0 ? `border:${borderWidth}px solid ${borderColor};` : ''
-  processed = processed.replace(
-    /<table([^>]*)>/gi,
-    (match, attrs) => {
-      // Check if style already exists
-      if (attrs.includes('style=')) {
-        // Add to existing style
-        return match.replace(
-          /style="([^"]*)"/i,
-          (styleMatch, existingStyle) => {
-            const newStyle = `${existingStyle}; ${STYLE_TABLE} ${tableBorderStyle} width:100%; max-width:100%;`
-            return `style="${newStyle}"`
-          }
-        )
-      } else {
-        // Add new style attribute
-        const newStyle = `${STYLE_TABLE} ${tableBorderStyle} width:100%; max-width:100%;`
-        return `<table style="${newStyle}"${attrs}>`
-      }
+  const tableBorderStyle = borderWidth > 0 ? `border:${borderWidth}px solid ${borderColor};` : ''
+  processed = processed.replace(/<table([^>]*)>/gi, (match, attrs) => {
+    // Check if style already exists
+    if (attrs.includes('style=')) {
+      // Add to existing style
+      return match.replace(/style="([^"]*)"/i, (styleMatch, existingStyle) => {
+        const newStyle = `${existingStyle}; ${STYLE_TABLE} ${tableBorderStyle} width:100%; max-width:100%;`
+        return `style="${newStyle}"`
+      })
+    } else {
+      // Add new style attribute
+      const newStyle = `${STYLE_TABLE} ${tableBorderStyle} width:100%; max-width:100%;`
+      return `<table style="${newStyle}"${attrs}>`
     }
-  )
+  })
 
   // Style table cells (td): add padding and borders with font size
-  const cellBorderStyle =
-    borderWidth > 0 ? `border:${borderWidth}px solid ${borderColor};` : ''
+  const cellBorderStyle = borderWidth > 0 ? `border:${borderWidth}px solid ${borderColor};` : ''
   const cellStyle = `${cellBorderStyle} padding:8px; vertical-align:top; font-size:${fontSize}px;`
-  processed = processed.replace(
-    /<td([^>]*)>/gi,
-    (match, attrs) => {
-      if (attrs.includes('style=')) {
-        // Add to existing style
-        return match.replace(
-          /style="([^"]*)"/i,
-          (styleMatch, existingStyle) => {
-            const newStyle = `${existingStyle}; ${cellStyle}`
-            return `style="${newStyle}"`
-          }
-        )
-      } else {
-        // Add new style attribute
-        return `<td style="${cellStyle}"${attrs}>`
-      }
+  processed = processed.replace(/<td([^>]*)>/gi, (match, attrs) => {
+    if (attrs.includes('style=')) {
+      // Add to existing style
+      return match.replace(/style="([^"]*)"/i, (styleMatch, existingStyle) => {
+        const newStyle = `${existingStyle}; ${cellStyle}`
+        return `style="${newStyle}"`
+      })
+    } else {
+      // Add new style attribute
+      return `<td style="${cellStyle}"${attrs}>`
     }
-  )
+  })
 
   // Style table headers (th): add padding, borders, background color, and underline
-  const headerBorderStyle =
-    borderWidth > 0 ? `border:${borderWidth}px solid ${borderColor};` : ''
+  const headerBorderStyle = borderWidth > 0 ? `border:${borderWidth}px solid ${borderColor};` : ''
   const headerUnderlineStyle =
-    headerUnderline > 0
-      ? `border-bottom:${headerUnderline}px solid ${headerUnderlineColor};`
-      : ''
+    headerUnderline > 0 ? `border-bottom:${headerUnderline}px solid ${headerUnderlineColor};` : ''
   const headerStyle = `${headerBorderStyle} padding:8px; vertical-align:top; background-color:${headerBgColor}; font-weight:bold; font-size:${fontSize}px; ${headerUnderlineStyle}`
-  processed = processed.replace(
-    /<th([^>]*)>/gi,
-    (match, attrs) => {
-      if (attrs.includes('style=')) {
-        // Add to existing style
-        return match.replace(
-          /style="([^"]*)"/i,
-          (styleMatch, existingStyle) => {
-            const newStyle = `${existingStyle}; ${headerStyle}`
-            return `style="${newStyle}"`
-          }
-        )
-      } else {
-        // Add new style attribute
-        return `<th style="${headerStyle}"${attrs}>`
-      }
+  processed = processed.replace(/<th([^>]*)>/gi, (match, attrs) => {
+    if (attrs.includes('style=')) {
+      // Add to existing style
+      return match.replace(/style="([^"]*)"/i, (styleMatch, existingStyle) => {
+        const newStyle = `${existingStyle}; ${headerStyle}`
+        return `style="${newStyle}"`
+      })
+    } else {
+      // Add new style attribute
+      return `<th style="${headerStyle}"${attrs}>`
     }
-  )
+  })
 
   return processed
 }
@@ -316,7 +286,7 @@ export function renderMasthead(data: Masthead, containerWidth = 640): string {
         </tr>
         <tr>
           <td style="padding:16px 24px 4px; font-size:13px; line-height:1.2; color:${TEXT_MUTED}; text-transform:uppercase; letter-spacing:0.35em; text-align:center;">
-            ${esc(title)}
+            <h1 style="margin:0; font-size:13px; line-height:1.2; font-weight:normal; color:${TEXT_MUTED};">${esc(title)}</h1>
           </td>
         </tr>
         <tr>
@@ -337,7 +307,7 @@ export function renderSectionStart(
   title: string,
   layout: SectionLayout | null = null,
   showBorder = true,
-  isLast = false
+  isLast = false,
 ): string {
   if (!layout) {
     layout = {
@@ -444,12 +414,13 @@ function renderCardLinks(card: Card): string {
 
   const linkHtml: string[] = []
   for (const link of links) {
-    const label = (link.label || '').trim()
+    const rawLabel = (link.label || '').trim()
+    const context = 'title' in card ? card.title.trim() : ''
+    const label =
+      context && /^(read more|learn more|click here|more)$/i.test(rawLabel) ? `${rawLabel}: ${context}` : rawLabel
     const url = authorUrl(link.url)
     if (label && url) {
-      linkHtml.push(
-        `<a href="${esc(url)}" style="${STYLE_LINK}">${esc(label)}</a>`
-      )
+      linkHtml.push(`<a href="${esc(url)}" style="${STYLE_LINK}">${esc(label)}</a>`)
     }
   }
 
@@ -507,11 +478,7 @@ function getCardStyle(card: Card, settings: Settings | null = null): string {
 /**
  * Get card padding with proper cascading - ALWAYS returns complete dict
  */
-function getCardPadding(
-  card: Card,
-  section: Section | null = null,
-  settings: Settings | null = null
-): Padding {
+function getCardPadding(card: Card, section: Section | null = null, settings: Settings | null = null): Padding {
   // Default fallback - ALWAYS has all 4 keys
   const defaultPadding: Padding = { top: 20, right: 20, bottom: 20, left: 20 }
 
@@ -534,12 +501,7 @@ function getCardPadding(
   // 2. Apply section-level overrides (if set)
   if (section) {
     let sectionPadding: Partial<Padding> = {}
-    if (
-      card.type === 'resource' &&
-      'show_icon' in card &&
-      card.show_icon &&
-      section.layout.padding_image
-    ) {
+    if (card.type === 'resource' && 'show_icon' in card && card.show_icon && section.layout.padding_image) {
       sectionPadding = section.layout.padding_image
     } else if (section.layout.padding_text) {
       sectionPadding = section.layout.padding_text
@@ -574,7 +536,7 @@ function getCardPadding(
 function renderStandardCard(
   card: StandardCard,
   section: Section | null = null,
-  settings: Settings | null = null
+  settings: Settings | null = null,
 ): string {
   const title = card.title || ''
   const bodyHtml = card.body_html || ''
@@ -592,7 +554,8 @@ function renderStandardCard(
 
   // Title
   if (title) {
-    contentParts.push(`<h3 style="${STYLE_H3}">${esc(title)}</h3>`)
+    const heading = section?.title?.trim() ? 'h3' : 'h2'
+    contentParts.push(`<${heading} style="${STYLE_H3}">${esc(title)}</${heading}>`)
   }
 
   // Body (allow raw HTML from rich text editor)
@@ -635,11 +598,7 @@ function renderStandardCard(
 /**
  * Event card with location label at top
  */
-function renderEventCard(
-  card: EventCard,
-  section: Section | null = null,
-  settings: Settings | null = null
-): string {
+function renderEventCard(card: EventCard, section: Section | null = null, settings: Settings | null = null): string {
   const title = card.title || ''
   const bodyHtml = card.body_html || ''
   const location = card.location || ''
@@ -656,14 +615,13 @@ function renderEventCard(
 
   // Location label (prominent at top for events)
   if (location) {
-    contentParts.push(
-      `<p style="${STYLE_LOCATION_LABEL}">${esc(location)}</p>`
-    )
+    contentParts.push(`<p style="${STYLE_LOCATION_LABEL}">${esc(location)}</p>`)
   }
 
   // Title
   if (title) {
-    contentParts.push(`<h3 style="${STYLE_H3}">${esc(title)}</h3>`)
+    const heading = section?.title?.trim() ? 'h3' : 'h2'
+    contentParts.push(`<${heading} style="${STYLE_H3}">${esc(title)}</${heading}>`)
   }
 
   // Body
@@ -681,9 +639,7 @@ function renderEventCard(
   }
 
   if (metaItems.length > 0) {
-    contentParts.push(
-      `<p style="${STYLE_META}">${metaItems.join('<br />')}</p>`
-    )
+    contentParts.push(`<p style="${STYLE_META}">${metaItems.join('<br />')}</p>`)
   }
 
   // Links
@@ -710,7 +666,7 @@ function renderEventCard(
 function renderResourceCard(
   card: ResourceCard,
   section: Section | null = null,
-  settings: Settings | null = null
+  settings: Settings | null = null,
 ): string {
   const title = card.title || ''
   const bodyHtml = card.body_html || ''
@@ -726,7 +682,8 @@ function renderResourceCard(
   // Build text content
   const textParts: string[] = []
   if (title) {
-    textParts.push(`<h3 style="${STYLE_H3}">${esc(title)}</h3>`)
+    const heading = section?.title?.trim() ? 'h3' : 'h2'
+    textParts.push(`<${heading} style="${STYLE_H3}">${esc(title)}</${heading}>`)
   }
   if (bodyHtml) {
     textParts.push(`<div style="${STYLE_BODY_TEXT}">${bodyHtml}</div>`)
@@ -791,11 +748,7 @@ function renderResourceCard(
 /**
  * Letter-style card for presidential updates
  */
-function renderLetterCard(
-  card: LetterCard,
-  section: Section | null = null,
-  settings: Settings | null = null
-): string {
+function renderLetterCard(card: LetterCard, section: Section | null = null, settings: Settings | null = null): string {
   const greeting = (card.greeting || '').trim()
   const bodyHtml = card.body_html || ''
   const closing = (card.closing || '').trim()
@@ -812,9 +765,7 @@ function renderLetterCard(
   const contentParts: string[] = []
 
   if (greeting) {
-    contentParts.push(
-      `<p style="${STYLE_BODY_TEXT} margin:0 0 18px 0; font-weight:normal;">${esc(greeting)}</p>`
-    )
+    contentParts.push(`<p style="${STYLE_BODY_TEXT} margin:0 0 18px 0; font-weight:normal;">${esc(greeting)}</p>`)
   }
 
   if (bodyHtml) {
@@ -827,14 +778,12 @@ function renderLetterCard(
       headerUnderlineColor: card.table_header_underline_color,
     })
     contentParts.push(
-      `<div style="font-size:16px; line-height:1.6; color:${TEXT_BODY}; margin:0 0 18px 0;">${processedBody}</div>`
+      `<div style="font-size:16px; line-height:1.6; color:${TEXT_BODY}; margin:0 0 18px 0;">${processedBody}</div>`,
     )
   }
 
   if (closing) {
-    contentParts.push(
-      `<p style="${STYLE_BODY_TEXT} margin:24px 0 8px 0; font-weight:normal;">${esc(closing)}</p>`
-    )
+    contentParts.push(`<p style="${STYLE_BODY_TEXT} margin:24px 0 8px 0; font-weight:normal;">${esc(closing)}</p>`)
   }
 
   if (signatureImageUrl) {
@@ -842,29 +791,23 @@ function renderLetterCard(
       `<p style="margin:0 0 12px 0;">
         <img src="${esc(signatureImageUrl)}" alt="${esc(signatureImageAlt)}" width="${signatureImageWidth}" 
         style="${STYLE_IMAGE} width:${signatureImageWidth}px; max-width:100%; height:auto; display:block;" />
-      </p>`
+      </p>`,
     )
   }
 
   if (signatureName) {
-    contentParts.push(
-      `<p style="${STYLE_BODY_TEXT} margin:0 0 4px 0; font-weight:bold;">${esc(signatureName)}</p>`
-    )
+    contentParts.push(`<p style="${STYLE_BODY_TEXT} margin:0 0 4px 0; font-weight:bold;">${esc(signatureName)}</p>`)
   }
 
   for (const line of signatureLines) {
     if (line.trim()) {
-      contentParts.push(
-        `<p style="${STYLE_BODY_TEXT} margin:0 0 4px 0; font-weight:normal;">${esc(line)}</p>`
-      )
+      contentParts.push(`<p style="${STYLE_BODY_TEXT} margin:0 0 4px 0; font-weight:normal;">${esc(line)}</p>`)
     }
   }
 
   const linksHtml = renderCardLinks(card)
   if (linksHtml) {
-    contentParts.push(
-      `<div style="margin-top:18px; font-size:14px; line-height:1.6;">${linksHtml}</div>`
-    )
+    contentParts.push(`<div style="margin-top:18px; font-size:14px; line-height:1.6;">${linksHtml}</div>`)
   }
 
   const content = contentParts.join('\n')
@@ -931,7 +874,7 @@ function renderCTABox(
   buttonFullWidth = false,
   card: CTACard | null = null,
   section: Section | null = null,
-  settings: Settings | null = null
+  settings: Settings | null = null,
 ): string {
   // Get dynamic card style and padding (like other card types)
   let cardStyle: string
@@ -955,10 +898,7 @@ function renderCTABox(
 
   // Get button style properties from card or use defaults
   const borderStyle = card?.button_border_style || 'solid'
-  const border =
-    buttonBorderWidth > 0
-      ? `${buttonBorderWidth}px ${borderStyle} ${buttonBorderColor}`
-      : 'none'
+  const border = buttonBorderWidth > 0 ? `${buttonBorderWidth}px ${borderStyle} ${buttonBorderColor}` : 'none'
   const width = buttonFullWidth ? '100%' : 'auto'
   const display = buttonFullWidth ? 'block' : 'inline-block'
 
@@ -1025,16 +965,19 @@ function renderCTABox(
       buttonStyle = `background-color:${buttonBgColor} !important; border-radius:${buttonBorderRadius}px; border:${border}; color:${buttonTextColor} !important; display:${display}; font-weight:${fontWeight}; font-size:${fontSize}px; line-height:20px; text-align:center; text-decoration:none; text-transform:${textTransform}; letter-spacing:${letterSpacing}px; padding:${paddingBtn}; margin-top:24px; margin-bottom:8px; width:${width}; ${buttonShadow}`
   }
 
-  const processedBody = processBodyHtmlForEmail(bodyHtml, card
-    ? {
-        borderStyle: card.table_border_style,
-        borderColor: card.table_border_color,
-        fontSize: card.table_font_size,
-        headerBgColor: card.table_header_bg_color,
-        headerUnderline: card.table_header_underline,
-        headerUnderlineColor: card.table_header_underline_color,
-      }
-    : undefined)
+  const processedBody = processBodyHtmlForEmail(
+    bodyHtml,
+    card
+      ? {
+          borderStyle: card.table_border_style,
+          borderColor: card.table_border_color,
+          fontSize: card.table_font_size,
+          headerBgColor: card.table_header_bg_color,
+          headerUnderline: card.table_header_underline,
+          headerUnderlineColor: card.table_header_underline_color,
+        }
+      : undefined,
+  )
 
   // Standard button/link structure
   return `<table cellpadding="0" cellspacing="0" role="presentation" width="100%" style="${cardStyle}">
@@ -1118,8 +1061,7 @@ export function renderFooter(data: Footer, templateType?: 'ff' | 'briefing' | 'l
   // Address formatting
   let addressHtml = ''
   if (addressLines.length > 0) {
-    const firstLine =
-      addressLines[0] ? `<strong>${esc(addressLines[0])}</strong>` : ''
+    const firstLine = addressLines[0] ? `<strong>${esc(addressLines[0])}</strong>` : ''
     const otherLines = addressLines
       .slice(1)
       .map((line) => esc(line))
@@ -1187,7 +1129,7 @@ function renderSection(
   spacing = 24,
   showBorder = true,
   settings: Settings | null = null,
-  isLast = false
+  isLast = false,
 ): string {
   const title = section.title || ''
   const key = section.key || ''
@@ -1230,8 +1172,7 @@ function renderSection(
       const ctaTitle = card.title || ''
       const ctaBody = card.body_html || ''
       const links = card.links || []
-      const ctaButtonLabel =
-        links.length > 0 && links[0].label ? links[0].label : 'Learn more'
+      const ctaButtonLabel = links.length > 0 && links[0].label ? links[0].label : 'Learn more'
       const ctaButtonUrl = authorUrl(links.length > 0 ? links[0].url : '')
 
       cardHtml.push(
@@ -1251,8 +1192,8 @@ function renderSection(
           card.button_full_width || false,
           card,
           section,
-          settings
-        )
+          settings,
+        ),
       )
     } else if (card.type === 'event') {
       cardHtml.push(renderEventCard(card, section, settings))
@@ -1265,13 +1206,7 @@ function renderSection(
     }
   }
 
-  return (
-    renderSectionStart(title, layout, showBorder, isLast) +
-    '\n' +
-    cardHtml.join('\n') +
-    '\n' +
-    renderSectionEnd()
-  )
+  return renderSectionStart(title, layout, showBorder, isLast) + '\n' + cardHtml.join('\n') + '\n' + renderSectionEnd()
 }
 
 /**
@@ -1316,15 +1251,7 @@ export function renderFullEmail(input: NewsletterData): string {
   const sectionsHtml: string[] = []
   for (let i = 0; i < sections.length; i++) {
     const isLast = i === sections.length - 1
-    sectionsHtml.push(
-      renderSection(
-        sections[i],
-        sectionSpacing,
-        showSectionBorders,
-        settings,
-        isLast
-      )
-    )
+    sectionsHtml.push(renderSection(sections[i], sectionSpacing, showSectionBorders, settings, isLast))
   }
 
   // Assemble complete email
@@ -1344,13 +1271,14 @@ export function renderFullEmail(input: NewsletterData): string {
   <![endif]-->
   <meta name="color-scheme" content="light dark" />
   <meta name="supported-color-schemes" content="light dark" />
-  <title>WSU Graduate School Newsletter</title>
+  <title>${esc(masthead.title || 'WSU Graduate School Newsletter')}</title>
   <style type="text/css">
     ${EMAIL_CSS}
   </style>
 </head>
 <body style="${STYLE_RESET} background-color:${BG_LIGHT};">
   ${renderPreheader(preheaderText)}
+  <div role="main">
   
   <!-- View in Browser -->
   ${renderViewInBrowser()}
@@ -1381,6 +1309,7 @@ export function renderFullEmail(input: NewsletterData): string {
       </td>
     </tr>
   </table>
+  </div>
 </body>
 </html>`
 
@@ -1506,4 +1435,3 @@ export function generatePlainText(data: NewsletterData): string {
   parts.push('\nGraduate School website: https://gradschool.wsu.edu')
   return parts.join('\n')
 }
-

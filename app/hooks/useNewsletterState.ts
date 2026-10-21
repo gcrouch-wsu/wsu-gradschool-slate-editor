@@ -1,184 +1,118 @@
-// app/editor/hooks/useNewsletterState.ts - State management hook with undo/redo and auto-save
-
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 import type { NewsletterData } from '@/types/newsletter'
 import { clone } from '@/lib/utils'
 
 const UNDO_MAX = 50
-const AUTO_SAVE_INTERVAL = 30000 // 30 seconds
+type History = {
+  current: NewsletterData
+  undo: NewsletterData[]
+  redo: NewsletterData[]
+  dirty: boolean
+}
+type Action =
+  | {
+      type: 'update'
+      updater: (previous: NewsletterData) => NewsletterData
+      history: boolean
+    }
+  | { type: 'reset'; value: NewsletterData }
+  | { type: 'undo' | 'redo' | 'backed-up' }
 
-export function useNewsletterState(
-  initialData: NewsletterData,
-  backupWritesEnabled = true
-) {
-  const [state, setState] = useState<NewsletterData>(initialData)
-  const [undoStack, setUndoStack] = useState<NewsletterData[]>([])
-  const [redoStack, setRedoStack] = useState<NewsletterData[]>([])
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const hasUnsavedChangesRef = useRef(false)
-  const lastInitialDataRef = useRef<NewsletterData | null>(null)
+function reduce(state: History, action: Action): History {
+  if (action.type === 'reset') return { current: action.value, undo: [], redo: [], dirty: false }
+  if (action.type === 'backed-up') return { ...state, dirty: false }
+  if (action.type === 'update')
+    return {
+      current: action.updater(state.current),
+      undo: action.history ? [...state.undo, clone(state.current)].slice(-UNDO_MAX) : state.undo,
+      redo: action.history ? [] : state.redo,
+      dirty: true,
+    }
+  if (action.type === 'undo' && state.undo.length)
+    return {
+      current: state.undo[state.undo.length - 1],
+      undo: state.undo.slice(0, -1),
+      redo: [...state.redo, clone(state.current)],
+      dirty: true,
+    }
+  if (action.type === 'redo' && state.redo.length)
+    return {
+      current: state.redo[state.redo.length - 1],
+      redo: state.redo.slice(0, -1),
+      undo: [...state.undo, clone(state.current)].slice(-UNDO_MAX),
+      dirty: true,
+    }
+  return state
+}
 
-  // Sync state when initialData prop changes (template switch, import, etc.)
-  // Always update when initialData changes (the API/component ensures it's actually new data)
+export function useNewsletterState(initialData: NewsletterData, backupWritesEnabled = true) {
+  const [history, dispatch] = useReducer(reduce, {
+    current: initialData,
+    undo: [],
+    redo: [],
+    dirty: false,
+  })
+  const initialRef = useRef(initialData)
   useEffect(() => {
-    const current = initialData
-    const previous = lastInitialDataRef.current
-
-    // Skip if it's the same object reference (React will give us the same object if unchanged)
-    if (current === previous) {
-      return
+    if (initialRef.current !== initialData) {
+      initialRef.current = initialData
+      dispatch({ type: 'reset', value: initialData })
     }
-
-    // Always update state when initialData changes - this handles template switches, imports, etc.
-    lastInitialDataRef.current = current
-    setState(current)
-    setUndoStack([])
-    setRedoStack([])
-    hasUnsavedChangesRef.current = false
   }, [initialData])
-
-  // Auto-save to localStorage
-  const saveToLocalStorage = useCallback(() => {
-    try {
-      const backup = {
-        state,
-        timestamp: new Date().toISOString(),
-        version: '7.0.2',
+  useEffect(() => {
+    if (!backupWritesEnabled || !history.dirty) return
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          'wsu_newsletter_backup',
+          JSON.stringify({
+            state: history.current,
+            timestamp: new Date().toISOString(),
+            version: '7.0.2',
+          }),
+        )
+        dispatch({ type: 'backed-up' })
+      } catch {
+        /* Retain dirty state when browser storage is unavailable. */
       }
-      localStorage.setItem('wsu_newsletter_backup', JSON.stringify(backup))
-      hasUnsavedChangesRef.current = false
-    } catch (e) {
-      // Auto-save failed silently
-      if (e instanceof Error && e.name === 'QuotaExceededError') {
-        // Storage full - auto-save disabled
-      }
+    }, 30000)
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
     }
-  }, [state])
-
-  // Load from localStorage
+    window.addEventListener('beforeunload', warn)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('beforeunload', warn)
+    }
+  }, [backupWritesEnabled, history])
+  const updateState = useCallback(
+    (updater: (prev: NewsletterData) => NewsletterData, pushHistory = true) =>
+      dispatch({ type: 'update', updater, history: pushHistory }),
+    [],
+  )
+  const resetState = useCallback((value: NewsletterData) => dispatch({ type: 'reset', value }), [])
+  const undo = useCallback(() => dispatch({ type: 'undo' }), [])
+  const redo = useCallback(() => dispatch({ type: 'redo' }), [])
   const loadFromLocalStorage = useCallback((): NewsletterData | null => {
     try {
-      const backupStr = localStorage.getItem('wsu_newsletter_backup')
-      if (!backupStr) return null
-
-      const backup = JSON.parse(backupStr)
-      const backupTime = new Date(backup.timestamp)
-      const now = new Date()
-      const ageMinutes = Math.floor((now.getTime() - backupTime.getTime()) / 60000)
-
-      // Only offer restore if backup is less than 24 hours old
-      if (ageMinutes > 1440) {
-        return null
-      }
-
-      return backup.state
-    } catch (e) {
+      const raw = localStorage.getItem('wsu_newsletter_backup')
+      if (!raw) return null
+      const backup = JSON.parse(raw)
+      const age = Date.now() - new Date(backup.timestamp).getTime()
+      return Number.isFinite(age) && age < 86400000 ? backup.state : null
+    } catch {
       return null
     }
   }, [])
-
-  // Update state and push to history
-  const updateState = useCallback(
-    (updater: (prev: NewsletterData) => NewsletterData, pushHistory = true) => {
-      setState((prev) => {
-        const newState = updater(prev)
-        
-        if (pushHistory) {
-          // Push to undo stack
-          setUndoStack((stack) => {
-            const newStack = [...stack, clone(prev)]
-            return newStack.slice(-UNDO_MAX)
-          })
-          // Clear redo stack
-          setRedoStack([])
-          hasUnsavedChangesRef.current = true
-        }
-        
-        return newState
-      })
-    },
-    []
-  )
-
-  // Undo
-  const undo = useCallback(() => {
-    setUndoStack((stack) => {
-      if (stack.length > 0) {
-        const previousState = stack[stack.length - 1]
-        setRedoStack((redo) => [...redo, clone(state)])
-        setState(previousState)
-        hasUnsavedChangesRef.current = true
-        return stack.slice(0, -1)
-      }
-      return stack
-    })
-  }, [state])
-
-  // Redo
-  const redo = useCallback(() => {
-    setRedoStack((stack) => {
-      if (stack.length > 0) {
-        const nextState = stack[stack.length - 1]
-        setUndoStack((undo) => [...undo, clone(state)])
-        setState(nextState)
-        hasUnsavedChangesRef.current = true
-        return stack.slice(0, -1)
-      }
-      return stack
-    })
-  }, [state])
-
-  // Reset state
-  const resetState = useCallback((newState: NewsletterData) => {
-    setState(newState)
-    setUndoStack([])
-    setRedoStack([])
-    hasUnsavedChangesRef.current = false
-  }, [])
-
-  // Save only after recovery has been resolved, and only when the editor has changes.
-  // An unresolved restore prompt must keep the backup that produced it.
-  useEffect(() => {
-    if (!backupWritesEnabled) return
-
-    autoSaveTimerRef.current = setInterval(() => {
-      if (hasUnsavedChangesRef.current) {
-        saveToLocalStorage()
-      }
-    }, AUTO_SAVE_INTERVAL)
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearInterval(autoSaveTimerRef.current)
-      }
-    }
-  }, [backupWritesEnabled, saveToLocalStorage])
-
-  // Warn before leaving page with unsaved changes
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChangesRef.current) {
-        e.preventDefault()
-        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?'
-        return e.returnValue
-      }
-    }
-
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-    }
-  }, [])
-
   return {
-    state,
+    state: history.current,
     updateState,
     undo,
     redo,
-    canUndo: undoStack.length > 0,
-    canRedo: redoStack.length > 0,
+    canUndo: history.undo.length > 0,
+    canRedo: history.redo.length > 0,
     resetState,
     loadFromLocalStorage,
   }
 }
-

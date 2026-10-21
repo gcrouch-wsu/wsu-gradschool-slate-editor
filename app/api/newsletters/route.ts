@@ -11,7 +11,11 @@ export async function GET(request: Request) {
   const principal = await requireEditor(request)
   if (!isPrincipal(principal)) return principal
   try {
-    return NextResponse.json({ newsletters: await listNewsletters() })
+    const archived = new URL(request.url).searchParams.get('archived') === 'true'
+    return NextResponse.json({
+      newsletters: await listNewsletters(undefined, archived),
+      user: principal,
+    })
   } catch (error) {
     return jsonError(error)
   }

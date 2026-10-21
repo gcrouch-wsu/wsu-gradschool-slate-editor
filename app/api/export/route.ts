@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { allowContentRoute } from '@/lib/auth/guard'
 import { renderExportedHtml } from '@/lib/export-html'
-import { DocumentValidationError } from '@/lib/newsletter-document'
+import { jsonError } from '@/lib/http'
 import type { ExportOptions } from '@/types/newsletter'
 
 export async function POST(request: NextRequest) {
@@ -19,13 +19,6 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    const status = error instanceof DocumentValidationError ? 400 : 500
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : 'Export failed',
-      },
-      { status }
-    )
+    return jsonError(error)
   }
 }

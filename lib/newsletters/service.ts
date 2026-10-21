@@ -3,11 +3,7 @@ import { getPool } from '@/lib/db/pool'
 import { sha256, randomToken } from '@/lib/auth/crypto'
 import type { UserRole } from '@/lib/auth/session-store'
 import { defaultBriefingModel, defaultFFModel, defaultLetterModel } from '@/lib/defaults'
-import {
-  DOCUMENT_SCHEMA_VERSION,
-  documentFingerprint,
-  normalizeNewsletter,
-} from '@/lib/newsletter-document'
+import { DOCUMENT_SCHEMA_VERSION, documentFingerprint, normalizeNewsletter } from '@/lib/newsletter-document'
 import type { NewsletterData, TemplateType } from '@/types/newsletter'
 
 const LEASE_SECONDS = 180
@@ -15,7 +11,7 @@ const LEASE_SECONDS = 180
 export class EditConflictError extends Error {
   constructor(
     public code: 'version' | 'lease' | 'fingerprint' | 'archived' | 'not_found',
-    message: string
+    message: string,
   ) {
     super(message)
     this.name = 'EditConflictError'
@@ -31,6 +27,7 @@ export interface NewsletterSummary {
   updatedByName: string
   leaseHeld: boolean
   leaseHolderName: string | null
+  leaseHolderUserId: string | null
   leaseExpiresAt: string | null
   archived: boolean
 }
@@ -62,7 +59,11 @@ function titleOf(data: NewsletterData): string {
   return title || 'Untitled newsletter'
 }
 
-async function withNewsletterLock<T>(newsletterId: string, work: (client: PoolClient) => Promise<T>, pool: Pool): Promise<T> {
+async function withNewsletterLock<T>(
+  newsletterId: string,
+  work: (client: PoolClient) => Promise<T>,
+  pool: Pool,
+): Promise<T> {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -93,7 +94,7 @@ async function loadRow(client: PoolClient, id: string): Promise<NewsletterRow | 
      LEFT JOIN users holder ON holder.id = n.lease_holder_user_id
      WHERE n.id = $1
      FOR UPDATE OF n`,
-    [id]
+    [id],
   )
   return result.rows[0] ?? null
 }
@@ -110,7 +111,7 @@ function assertHolder(row: NewsletterRow, userId: string, token: string) {
   }
 }
 
-export async function listNewsletters(pool: Pool = getPool()): Promise<NewsletterSummary[]> {
+export async function listNewsletters(pool: Pool = getPool(), archived = false): Promise<NewsletterSummary[]> {
   const result = await pool.query<NewsletterRow>(
     `SELECT n.id, n.title, n.template, n.content, n.document_schema_version, n.save_version,
             n.archived_at, n.updated_at, updater.display_name AS updated_by_name,
@@ -119,8 +120,9 @@ export async function listNewsletters(pool: Pool = getPool()): Promise<Newslette
      FROM newsletters n
      JOIN users updater ON updater.id = n.updated_by
      LEFT JOIN users holder ON holder.id = n.lease_holder_user_id
-     WHERE n.archived_at IS NULL
-     ORDER BY n.updated_at DESC`
+     WHERE (n.archived_at IS NOT NULL) = $1
+     ORDER BY n.updated_at DESC`,
+    [archived],
   )
   return result.rows.map(toSummary)
 }
@@ -136,6 +138,7 @@ function toSummary(row: NewsletterRow): NewsletterSummary {
     updatedByName: row.updated_by_name,
     leaseHeld: held,
     leaseHolderName: held ? row.lease_holder_name : null,
+    leaseHolderUserId: held ? row.lease_holder_user_id : null,
     leaseExpiresAt: held && row.lease_expires_at ? new Date(row.lease_expires_at).toISOString() : null,
     archived: Boolean(row.archived_at),
   }
@@ -151,7 +154,7 @@ export async function getNewsletter(id: string, pool: Pool = getPool()) {
      JOIN users updater ON updater.id = n.updated_by
      LEFT JOIN users holder ON holder.id = n.lease_holder_user_id
      WHERE n.id = $1`,
-    [id]
+    [id],
   )
   const row = result.rows[0]
   if (!row) return null
@@ -160,7 +163,9 @@ export async function getNewsletter(id: string, pool: Pool = getPool()) {
 }
 
 export async function createNewsletter(userId: string, template: TemplateType, pool: Pool = getPool()) {
-  const content = normalizeNewsletter(modelFor(template), { requireShape: true })
+  const content = normalizeNewsletter(modelFor(template), {
+    requireShape: true,
+  })
   const id = crypto.randomUUID()
   const client = await pool.connect()
   try {
@@ -169,12 +174,12 @@ export async function createNewsletter(userId: string, template: TemplateType, p
       `INSERT INTO newsletters (
          id, title, template, content, document_schema_version, save_version, created_by, updated_by
        ) VALUES ($1, $2, $3, $4::jsonb, $5, 1, $6, $6)`,
-      [id, titleOf(content), content.template, JSON.stringify(content), DOCUMENT_SCHEMA_VERSION, userId]
+      [id, titleOf(content), content.template, JSON.stringify(content), DOCUMENT_SCHEMA_VERSION, userId],
     )
     await client.query(
       `INSERT INTO newsletter_revisions (id, newsletter_id, revision_number, snapshot, actor_id, action)
        VALUES ($1, $2, 1, $3::jsonb, $4, 'create')`,
-      [crypto.randomUUID(), id, JSON.stringify(content), userId]
+      [crypto.randomUUID(), id, JSON.stringify(content), userId],
     )
     await client.query('COMMIT')
   } catch (error) {
@@ -196,12 +201,12 @@ export async function importNewsletterDraft(userId: string, snapshot: unknown, p
       `INSERT INTO newsletters (
          id, title, template, content, document_schema_version, save_version, created_by, updated_by
        ) VALUES ($1, $2, $3, $4::jsonb, $5, 1, $6, $6)`,
-      [id, titleOf(content), content.template, JSON.stringify(content), DOCUMENT_SCHEMA_VERSION, userId]
+      [id, titleOf(content), content.template, JSON.stringify(content), DOCUMENT_SCHEMA_VERSION, userId],
     )
     await client.query(
       `INSERT INTO newsletter_revisions (id, newsletter_id, revision_number, snapshot, actor_id, action)
        VALUES ($1, $2, 1, $3::jsonb, $4, 'import')`,
-      [crypto.randomUUID(), id, JSON.stringify(content), userId]
+      [crypto.randomUUID(), id, JSON.stringify(content), userId],
     )
     await client.query('COMMIT')
   } catch (error) {
@@ -215,70 +220,119 @@ export async function importNewsletterDraft(userId: string, snapshot: unknown, p
 
 export async function acquireLease(id: string, userId: string, pool: Pool = getPool()) {
   const token = randomToken()
-  return withNewsletterLock(id, async (client) => {
-    const row = await loadRow(client, id)
-    if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
-    if (row.archived_at) throw new EditConflictError('archived', 'This newsletter is archived.')
-    if (leaseActive(row)) {
-      throw new EditConflictError('lease', 'Another editing session holds this newsletter.')
-    }
-    await client.query(
-      `UPDATE newsletters
+  return withNewsletterLock(
+    id,
+    async (client) => {
+      const row = await loadRow(client, id)
+      if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
+      if (row.archived_at) throw new EditConflictError('archived', 'This newsletter is archived.')
+      if (leaseActive(row)) {
+        throw new EditConflictError('lease', 'Another editing session holds this newsletter.')
+      }
+      await client.query(
+        `UPDATE newsletters
        SET lease_token_hash = $2, lease_holder_user_id = $3, lease_expires_at = now() + ($4 || ' seconds')::interval
        WHERE id = $1`,
-      [id, sha256(token), userId, String(LEASE_SECONDS)]
-    )
-    return { token, saveVersion: row.save_version, content: normalizeNewsletter(row.content), summary: toSummary({ ...row, lease_token_hash: sha256(token), lease_holder_user_id: userId, lease_expires_at: new Date(Date.now() + LEASE_SECONDS * 1000).toISOString() }) }
-  }, pool)
+        [id, sha256(token), userId, String(LEASE_SECONDS)],
+      )
+      const acquired = (await loadRow(client, id))!
+      return {
+        token,
+        saveVersion: acquired.save_version,
+        content: normalizeNewsletter(acquired.content),
+        summary: toSummary(acquired),
+      }
+    },
+    pool,
+  )
+}
+
+// A token retained by a tab is only a hint. Revalidate it and reload the canonical
+// document before making a remounted editor writable.
+export async function resumeLease(id: string, userId: string, token: string, pool: Pool = getPool()) {
+  return withNewsletterLock(
+    id,
+    async (client) => {
+      const row = await loadRow(client, id)
+      if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
+      assertHolder(row, userId, token)
+      await client.query(
+        `UPDATE newsletters SET lease_expires_at = now() + ($2 || ' seconds')::interval WHERE id = $1`,
+        [id, String(LEASE_SECONDS)],
+      )
+      return {
+        token,
+        saveVersion: row.save_version,
+        content: normalizeNewsletter(row.content),
+      }
+    },
+    pool,
+  )
 }
 
 export async function renewLease(id: string, userId: string, token: string, pool: Pool = getPool()) {
-  return withNewsletterLock(id, async (client) => {
-    const row = await loadRow(client, id)
-    if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
-    assertHolder(row, userId, token)
-    await client.query(
-      `UPDATE newsletters
+  return withNewsletterLock(
+    id,
+    async (client) => {
+      const row = await loadRow(client, id)
+      if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
+      assertHolder(row, userId, token)
+      await client.query(
+        `UPDATE newsletters
        SET lease_expires_at = now() + ($2 || ' seconds')::interval
        WHERE id = $1`,
-      [id, String(LEASE_SECONDS)]
-    )
-    return { renewed: true, saveVersion: row.save_version }
-  }, pool)
+        [id, String(LEASE_SECONDS)],
+      )
+      return { renewed: true, saveVersion: row.save_version }
+    },
+    pool,
+  )
 }
 
 export async function takeoverLease(id: string, userId: string, pool: Pool = getPool()) {
   const token = randomToken()
-  return withNewsletterLock(id, async (client) => {
-    const row = await loadRow(client, id)
-    if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
-    if (row.archived_at) throw new EditConflictError('archived', 'This newsletter is archived.')
-    await client.query(
-      `UPDATE newsletters
+  return withNewsletterLock(
+    id,
+    async (client) => {
+      const row = await loadRow(client, id)
+      if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
+      if (row.archived_at) throw new EditConflictError('archived', 'This newsletter is archived.')
+      await client.query(
+        `UPDATE newsletters
        SET lease_token_hash = $2, lease_holder_user_id = $3, lease_expires_at = now() + ($4 || ' seconds')::interval
        WHERE id = $1`,
-      [id, sha256(token), userId, String(LEASE_SECONDS)]
-    )
-    return { token, saveVersion: row.save_version, content: normalizeNewsletter(row.content) }
-  }, pool)
+        [id, sha256(token), userId, String(LEASE_SECONDS)],
+      )
+      return {
+        token,
+        saveVersion: row.save_version,
+        content: normalizeNewsletter(row.content),
+      }
+    },
+    pool,
+  )
 }
 
 export async function releaseLease(id: string, userId: string, token: string, pool: Pool = getPool()) {
-  return withNewsletterLock(id, async (client) => {
-    const row = await loadRow(client, id)
-    if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
-    if (!row.lease_token_hash) return { released: true, alreadyReleased: true }
-    if (row.lease_holder_user_id !== userId || row.lease_token_hash !== sha256(token)) {
-      return { released: false, superseded: true }
-    }
-    await client.query(
-      `UPDATE newsletters
+  return withNewsletterLock(
+    id,
+    async (client) => {
+      const row = await loadRow(client, id)
+      if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
+      if (!row.lease_token_hash) return { released: true, alreadyReleased: true }
+      if (row.lease_holder_user_id !== userId || row.lease_token_hash !== sha256(token)) {
+        return { released: false, superseded: true }
+      }
+      await client.query(
+        `UPDATE newsletters
        SET lease_token_hash = NULL, lease_holder_user_id = NULL, lease_expires_at = NULL
        WHERE id = $1`,
-      [id]
-    )
-    return { released: true, alreadyReleased: false }
-  }, pool)
+        [id],
+      )
+      return { released: true, alreadyReleased: false }
+    },
+    pool,
+  )
 }
 
 export interface SaveInput {
@@ -292,45 +346,47 @@ export interface SaveInput {
 export async function saveNewsletter(id: string, input: SaveInput, pool: Pool = getPool()) {
   const content = normalizeNewsletter(input.snapshot, { requireShape: true })
   const fingerprint = documentFingerprint(content)
-  return withNewsletterLock(id, async (client) => {
-    const receipt = await client.query<{
-      actor_id: string
-      base_version: number
-      request_fingerprint: string
-      committed_version: number
-    }>(
-      `SELECT actor_id, base_version, request_fingerprint, committed_version
+  return withNewsletterLock(
+    id,
+    async (client) => {
+      const receipt = await client.query<{
+        actor_id: string
+        base_version: number
+        request_fingerprint: string
+        committed_version: number
+      }>(
+        `SELECT actor_id, base_version, request_fingerprint, committed_version
        FROM newsletter_save_receipts
        WHERE newsletter_id = $1 AND client_save_id = $2`,
-      [id, input.saveId]
-    )
-    const existing = receipt.rows[0]
-    if (existing) {
-      if (
-        existing.actor_id !== input.userId ||
-        existing.base_version !== input.expectedVersion ||
-        existing.request_fingerprint !== fingerprint
-      ) {
-        throw new EditConflictError('fingerprint', 'Save id was reused for a different request.')
+        [id, input.saveId],
+      )
+      const existing = receipt.rows[0]
+      if (existing) {
+        if (
+          existing.actor_id !== input.userId ||
+          existing.base_version !== input.expectedVersion ||
+          existing.request_fingerprint !== fingerprint
+        ) {
+          throw new EditConflictError('fingerprint', 'Save id was reused for a different request.')
+        }
+        const row = await loadRow(client, id)
+        return {
+          saveVersion: existing.committed_version,
+          idempotent: true,
+          currentVersion: row?.save_version ?? existing.committed_version,
+          content,
+        }
       }
+
       const row = await loadRow(client, id)
-      return {
-        saveVersion: existing.committed_version,
-        idempotent: true,
-        currentVersion: row?.save_version ?? existing.committed_version,
-        content,
+      if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
+      assertHolder(row, input.userId, input.token)
+      if (row.save_version !== input.expectedVersion) {
+        throw new EditConflictError('version', 'Stale newsletter version.')
       }
-    }
 
-    const row = await loadRow(client, id)
-    if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
-    assertHolder(row, input.userId, input.token)
-    if (row.save_version !== input.expectedVersion) {
-      throw new EditConflictError('version', 'Stale newsletter version.')
-    }
-
-    const updated = await client.query<{ save_version: number }>(
-      `UPDATE newsletters
+      const updated = await client.query<{ save_version: number }>(
+        `UPDATE newsletters
        SET content = $2::jsonb,
            template = $3,
            title = $4,
@@ -347,33 +403,46 @@ export async function saveNewsletter(id: string, input: SaveInput, pool: Pool = 
          AND lease_expires_at > now()
          AND archived_at IS NULL
        RETURNING save_version`,
-      [
-        id,
-        JSON.stringify(content),
-        content.template,
-        titleOf(content),
-        DOCUMENT_SCHEMA_VERSION,
-        input.userId,
-        input.saveId,
-        String(LEASE_SECONDS),
-        input.expectedVersion,
-        sha256(input.token),
-      ]
-    )
-    const committed = updated.rows[0]?.save_version
-    if (!committed) throw new EditConflictError('version', 'Stale newsletter version.')
-    await appendRevision(client, id, content, input.userId, 'save')
-    await client.query(
-      `INSERT INTO newsletter_save_receipts (
+        [
+          id,
+          JSON.stringify(content),
+          content.template,
+          titleOf(content),
+          DOCUMENT_SCHEMA_VERSION,
+          input.userId,
+          input.saveId,
+          String(LEASE_SECONDS),
+          input.expectedVersion,
+          sha256(input.token),
+        ],
+      )
+      const committed = updated.rows[0]?.save_version
+      if (!committed) throw new EditConflictError('version', 'Stale newsletter version.')
+      await appendRevision(client, id, content, input.userId, 'save')
+      await client.query(
+        `INSERT INTO newsletter_save_receipts (
          id, newsletter_id, client_save_id, actor_id, base_version, request_fingerprint, committed_version
        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [crypto.randomUUID(), id, input.saveId, input.userId, input.expectedVersion, fingerprint, committed]
-    )
-    return { saveVersion: committed, idempotent: false, currentVersion: committed, content }
-  }, pool)
+        [crypto.randomUUID(), id, input.saveId, input.userId, input.expectedVersion, fingerprint, committed],
+      )
+      return {
+        saveVersion: committed,
+        idempotent: false,
+        currentVersion: committed,
+        content,
+      }
+    },
+    pool,
+  )
 }
 
-async function appendRevision(client: PoolClient, id: string, snapshot: NewsletterData, actorId: string, action: string) {
+async function appendRevision(
+  client: PoolClient,
+  id: string,
+  snapshot: NewsletterData,
+  actorId: string,
+  action: string,
+) {
   await client.query(
     `INSERT INTO newsletter_revisions (id, newsletter_id, revision_number, snapshot, actor_id, action)
      VALUES (
@@ -381,26 +450,35 @@ async function appendRevision(client: PoolClient, id: string, snapshot: Newslett
        COALESCE((SELECT MAX(revision_number) FROM newsletter_revisions WHERE newsletter_id = $2), 0) + 1,
        $3::jsonb, $4, $5
      )`,
-    [crypto.randomUUID(), id, JSON.stringify(snapshot), actorId, action]
+    [crypto.randomUUID(), id, JSON.stringify(snapshot), actorId, action],
   )
 }
 
 async function mutateWithLease(
   id: string,
-  input: { userId: string; token: string; expectedVersion: number; action: string; next: NewsletterData; archive?: boolean },
-  pool: Pool
+  input: {
+    userId: string
+    token: string
+    expectedVersion: number
+    action: string
+    next: NewsletterData
+    archive?: boolean
+  },
+  pool: Pool,
 ) {
   const content = normalizeNewsletter(input.next, { requireShape: true })
   const token = input.archive ? null : randomToken()
-  return withNewsletterLock(id, async (client) => {
-    const row = await loadRow(client, id)
-    if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
-    assertHolder(row, input.userId, input.token)
-    if (row.save_version !== input.expectedVersion) {
-      throw new EditConflictError('version', 'Stale newsletter version.')
-    }
-    const updated = await client.query(
-      `UPDATE newsletters
+  return withNewsletterLock(
+    id,
+    async (client) => {
+      const row = await loadRow(client, id)
+      if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
+      assertHolder(row, input.userId, input.token)
+      if (row.save_version !== input.expectedVersion) {
+        throw new EditConflictError('version', 'Stale newsletter version.')
+      }
+      const updated = await client.query(
+        `UPDATE newsletters
        SET content = $2::jsonb,
            template = $3,
            title = $4,
@@ -412,45 +490,61 @@ async function mutateWithLease(
            lease_holder_user_id = CASE WHEN $7::text IS NULL THEN NULL::uuid ELSE $5::uuid END,
            lease_expires_at = CASE WHEN $7::text IS NULL THEN NULL ELSE now() + ($8::text || ' seconds')::interval END
        WHERE id = $1 AND save_version = $9::int AND lease_token_hash = $10::text`,
-      [
-        id,
-        JSON.stringify(content),
-        content.template,
-        titleOf(content),
-        input.userId,
-        Boolean(input.archive),
-        token ? sha256(token) : null,
-        String(LEASE_SECONDS),
-        input.expectedVersion,
-        sha256(input.token),
-      ]
-    )
-    if (updated.rowCount !== 1) throw new EditConflictError('version', 'Stale newsletter version.')
-    await appendRevision(client, id, content, input.userId, input.action)
-    return { saveVersion: input.expectedVersion + 1, token, content }
-  }, pool)
+        [
+          id,
+          JSON.stringify(content),
+          content.template,
+          titleOf(content),
+          input.userId,
+          Boolean(input.archive),
+          token ? sha256(token) : null,
+          String(LEASE_SECONDS),
+          input.expectedVersion,
+          sha256(input.token),
+        ],
+      )
+      if (updated.rowCount !== 1) throw new EditConflictError('version', 'Stale newsletter version.')
+      await appendRevision(client, id, content, input.userId, input.action)
+      return { saveVersion: input.expectedVersion + 1, token, content }
+    },
+    pool,
+  )
 }
 
 export async function replaceTemplate(
   id: string,
-  input: { userId: string; token: string; expectedVersion: number; template: TemplateType },
-  pool: Pool = getPool()
+  input: {
+    userId: string
+    token: string
+    expectedVersion: number
+    template: TemplateType
+  },
+  pool: Pool = getPool(),
 ) {
   return mutateWithLease(
     id,
-    { ...input, action: 'template_replacement', next: modelFor(input.template) },
-    pool
+    {
+      ...input,
+      action: 'template_replacement',
+      next: modelFor(input.template),
+    },
+    pool,
   )
 }
 
 export async function restoreRevision(
   id: string,
-  input: { userId: string; token: string; expectedVersion: number; revisionId: string },
-  pool: Pool = getPool()
+  input: {
+    userId: string
+    token: string
+    expectedVersion: number
+    revisionId: string
+  },
+  pool: Pool = getPool(),
 ) {
   const revision = await pool.query<{ snapshot: NewsletterData }>(
     'SELECT snapshot FROM newsletter_revisions WHERE id = $1 AND newsletter_id = $2',
-    [input.revisionId, id]
+    [input.revisionId, id],
   )
   const snapshot = revision.rows[0]?.snapshot
   if (!snapshot) throw new EditConflictError('not_found', 'Revision not found.')
@@ -460,7 +554,7 @@ export async function restoreRevision(
 export async function archiveNewsletter(
   id: string,
   input: { userId: string; token: string; expectedVersion: number },
-  pool: Pool = getPool()
+  pool: Pool = getPool(),
 ) {
   const current = await getNewsletter(id, pool)
   if (!current) throw new EditConflictError('not_found', 'Newsletter not found.')
@@ -468,17 +562,19 @@ export async function archiveNewsletter(
 }
 
 export async function discardNewsletter(id: string, userId: string, pool: Pool = getPool()) {
-  return withNewsletterLock(id, async (client) => {
-    const row = await loadRow(client, id)
-    if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
-    if (row.archived_at) throw new EditConflictError('archived', 'This newsletter is archived.')
-    if (leaseActive(row) && row.lease_holder_user_id !== userId) {
-      const holder = row.lease_holder_name ?? 'another editor'
-      throw new EditConflictError('lease', `This draft is being edited by ${holder}.`)
-    }
-    const content = normalizeNewsletter(row.content)
-    const updated = await client.query(
-      `UPDATE newsletters
+  return withNewsletterLock(
+    id,
+    async (client) => {
+      const row = await loadRow(client, id)
+      if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
+      if (row.archived_at) throw new EditConflictError('archived', 'This newsletter is archived.')
+      if (leaseActive(row) && row.lease_holder_user_id !== userId) {
+        const holder = row.lease_holder_name ?? 'another editor'
+        throw new EditConflictError('lease', `This draft is being edited by ${holder}.`)
+      }
+      const content = normalizeNewsletter(row.content)
+      const updated = await client.query(
+        `UPDATE newsletters
        SET archived_at = now(),
            save_version = save_version + 1,
            updated_by = $2::uuid,
@@ -487,12 +583,36 @@ export async function discardNewsletter(id: string, userId: string, pool: Pool =
            lease_holder_user_id = NULL,
            lease_expires_at = NULL
        WHERE id = $1 AND archived_at IS NULL`,
-      [id, userId]
-    )
-    if (updated.rowCount !== 1) throw new EditConflictError('version', 'This draft could not be deleted.')
-    await appendRevision(client, id, content, userId, 'archive')
-    return { id, archived: true }
-  }, pool)
+        [id, userId],
+      )
+      if (updated.rowCount !== 1) throw new EditConflictError('version', 'This draft could not be deleted.')
+      await appendRevision(client, id, content, userId, 'archive')
+      return { id, archived: true }
+    },
+    pool,
+  )
+}
+
+export async function restoreArchivedNewsletter(id: string, userId: string, pool: Pool = getPool()) {
+  return withNewsletterLock(
+    id,
+    async (client) => {
+      const row = await loadRow(client, id)
+      if (!row) throw new EditConflictError('not_found', 'Newsletter not found.')
+      // A lost response can be retried without replacing content or disturbing a
+      // lease acquired after the original restore.
+      if (!row.archived_at) return { id, archived: false, alreadyRestored: true }
+      await client.query(
+        `UPDATE newsletters SET archived_at = NULL, save_version = save_version + 1,
+       updated_by = $2, updated_at = now(), lease_token_hash = NULL,
+       lease_holder_user_id = NULL, lease_expires_at = NULL WHERE id = $1`,
+        [id, userId],
+      )
+      await appendRevision(client, id, normalizeNewsletter(row.content), userId, 'unarchive')
+      return { id, archived: false, alreadyRestored: false }
+    },
+    pool,
+  )
 }
 
 export async function duplicateNewsletter(id: string, userId: string, pool: Pool = getPool()) {
@@ -500,7 +620,10 @@ export async function duplicateNewsletter(id: string, userId: string, pool: Pool
   if (!current) throw new EditConflictError('not_found', 'Newsletter not found.')
   const content = normalizeNewsletter({
     ...current.content,
-    masthead: { ...current.content.masthead, title: `${titleOf(current.content)} copy` },
+    masthead: {
+      ...current.content.masthead,
+      title: `${titleOf(current.content)} copy`,
+    },
   })
   const copyId = crypto.randomUUID()
   const client = await pool.connect()
@@ -510,7 +633,7 @@ export async function duplicateNewsletter(id: string, userId: string, pool: Pool
       `INSERT INTO newsletters (
          id, title, template, content, document_schema_version, save_version, created_by, updated_by
        ) VALUES ($1, $2, $3, $4::jsonb, $5, 1, $6, $6)`,
-      [copyId, titleOf(content), content.template, JSON.stringify(content), DOCUMENT_SCHEMA_VERSION, userId]
+      [copyId, titleOf(content), content.template, JSON.stringify(content), DOCUMENT_SCHEMA_VERSION, userId],
     )
     await appendRevision(client, copyId, content, userId, 'duplicate')
     await client.query('COMMIT')
@@ -537,7 +660,7 @@ export async function listRevisions(id: string, pool: Pool = getPool()) {
      JOIN users u ON u.id = r.actor_id
      WHERE r.newsletter_id = $1
      ORDER BY r.revision_number DESC`,
-    [id]
+    [id],
   )
   return result.rows.map((row) => ({
     id: row.id,
@@ -558,7 +681,7 @@ export async function saveRecoveryDraft(
   userId: string,
   snapshot: unknown,
   baseVersion: number,
-  pool: Pool = getPool()
+  pool: Pool = getPool(),
 ) {
   const content = normalizeNewsletter(snapshot, { requireShape: true })
   await pool.query(
@@ -566,17 +689,21 @@ export async function saveRecoveryDraft(
      VALUES ($1, $2, $3::jsonb, $4, now())
      ON CONFLICT (newsletter_id, user_id) DO UPDATE
      SET snapshot = EXCLUDED.snapshot, base_version = EXCLUDED.base_version, updated_at = now()`,
-    [id, userId, JSON.stringify(content), baseVersion]
+    [id, userId, JSON.stringify(content), baseVersion],
   )
 }
 
 export async function getRecoveryDraft(id: string, userId: string, pool: Pool = getPool()) {
-  const result = await pool.query<{ snapshot: NewsletterData; base_version: number; save_version: number }>(
+  const result = await pool.query<{
+    snapshot: NewsletterData
+    base_version: number
+    save_version: number
+  }>(
     `SELECT d.snapshot, d.base_version, n.save_version
      FROM newsletter_recovery_drafts d
      JOIN newsletters n ON n.id = d.newsletter_id
      WHERE d.newsletter_id = $1 AND d.user_id = $2`,
-    [id, userId]
+    [id, userId],
   )
   const row = result.rows[0]
   if (!row) return null

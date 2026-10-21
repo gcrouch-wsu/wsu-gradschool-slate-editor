@@ -30,6 +30,8 @@ import {
   listRevisions,
   releaseLease,
   renewLease,
+  resumeLease,
+  restoreArchivedNewsletter,
   replaceTemplate,
   restoreRevision,
   saveNewsletter,
@@ -60,7 +62,7 @@ async function editor(name: string, email: string | null = null) {
 async function saveCount(id: string) {
   const result = await getPool().query<{ count: string }>(
     `SELECT count(*)::text AS count FROM newsletter_revisions WHERE newsletter_id = $1 AND action = 'save'`,
-    [id]
+    [id],
   )
   return Number(result.rows[0].count)
 }
@@ -135,7 +137,7 @@ test('identities are unique and email is not', async () => {
       role: 'editor',
       issuer: 'https://issuer.test',
       subject: 'fixed-subject',
-    })
+    }),
   ).resolves.toEqual(expect.any(String))
   await expect(
     createProvisionedUser({
@@ -144,17 +146,22 @@ test('identities are unique and email is not', async () => {
       role: 'editor',
       issuer: 'https://issuer.test',
       subject: 'fixed-subject',
-    })
+    }),
   ).rejects.toThrow()
 })
 
 test('sessions are revocable and follow authorization changes', async () => {
   const userId = await editor('Session')
   const session = await createSession(userId)
-  const stored = await getPool().query<{ token_hash: string }>('SELECT token_hash FROM sessions WHERE user_id = $1', [userId])
+  const stored = await getPool().query<{ token_hash: string }>('SELECT token_hash FROM sessions WHERE user_id = $1', [
+    userId,
+  ])
   expect(stored.rows[0].token_hash).toBe(sha256(session.token))
   expect(stored.rows[0].token_hash).not.toBe(session.token)
-  expect(await principalFromToken(session.token)).toMatchObject({ userId, role: 'editor' })
+  expect(await principalFromToken(session.token)).toMatchObject({
+    userId,
+    role: 'editor',
+  })
 
   await updateUserAccess({ userId, role: 'administrator' })
   expect(await principalFromToken(session.token)).toBeNull()
@@ -172,8 +179,12 @@ test('two users and two tokens cannot share one lease', async () => {
   const grace = await editor('Grace Lease')
   const created = await createNewsletter(ada, 'ff')
   const first = await acquireLease(created.id, ada)
-  await expect(acquireLease(created.id, grace)).rejects.toMatchObject({ code: 'lease' })
-  await expect(acquireLease(created.id, ada)).rejects.toMatchObject({ code: 'lease' })
+  await expect(acquireLease(created.id, grace)).rejects.toMatchObject({
+    code: 'lease',
+  })
+  await expect(acquireLease(created.id, ada)).rejects.toMatchObject({
+    code: 'lease',
+  })
   const taken = await takeoverLease(created.id, ada)
   expect(taken.content.masthead.title).toBe(first.content.masthead.title)
   expect(taken.saveVersion).toBe(first.saveVersion)
@@ -184,7 +195,7 @@ test('two users and two tokens cannot share one lease', async () => {
       expectedVersion: first.saveVersion,
       saveId: crypto.randomUUID(),
       snapshot: titled(created.content, 'Old token'),
-    })
+    }),
   ).rejects.toBeInstanceOf(EditConflictError)
   const saved = await saveNewsletter(created.id, {
     userId: ada,
@@ -208,7 +219,7 @@ test('saves are versioned, idempotent, and isolated from lease release', async (
       expectedVersion: 99,
       saveId: 'stale',
       snapshot: titled(created.content, 'Stale'),
-    })
+    }),
   ).rejects.toMatchObject({ code: 'version' })
   expect(await saveCount(created.id)).toBe(before)
 
@@ -233,7 +244,11 @@ test('saves are versioned, idempotent, and isolated from lease release', async (
     saveId: 'save-1',
     snapshot: titled(created.content, 'First'),
   })
-  expect(retry).toMatchObject({ idempotent: true, saveVersion: first.saveVersion, currentVersion: second.saveVersion })
+  expect(retry).toMatchObject({
+    idempotent: true,
+    saveVersion: first.saveVersion,
+    currentVersion: second.saveVersion,
+  })
   expect((await getNewsletter(created.id))?.content.masthead.title).toBe('Second')
   expect(await saveCount(created.id)).toBe(2)
 
@@ -244,14 +259,26 @@ test('saves are versioned, idempotent, and isolated from lease release', async (
       expectedVersion: 1,
       saveId: 'save-1',
       snapshot: titled(created.content, 'Different'),
-    })
+    }),
   ).rejects.toMatchObject({ code: 'fingerprint' })
   expect(await saveCount(created.id)).toBe(2)
 
   const same = titled(created.content, 'Race')
   const raced = await Promise.all([
-    saveNewsletter(created.id, { userId, token: lease.token, expectedVersion: second.saveVersion, saveId: 'race', snapshot: same }),
-    saveNewsletter(created.id, { userId, token: lease.token, expectedVersion: second.saveVersion, saveId: 'race', snapshot: same }),
+    saveNewsletter(created.id, {
+      userId,
+      token: lease.token,
+      expectedVersion: second.saveVersion,
+      saveId: 'race',
+      snapshot: same,
+    }),
+    saveNewsletter(created.id, {
+      userId,
+      token: lease.token,
+      expectedVersion: second.saveVersion,
+      saveId: 'race',
+      snapshot: same,
+    }),
   ])
   expect(raced.filter((result) => result.idempotent)).toHaveLength(1)
   expect(new Set(raced.map((result) => result.saveVersion)).size).toBe(1)
@@ -287,7 +314,9 @@ test('an expired clean lease cannot be renewed or saved', async () => {
   const userId = await editor('Expiry')
   const created = await createNewsletter(userId, 'briefing')
   const lease = await acquireLease(created.id, userId)
-  await getPool().query(`UPDATE newsletters SET lease_expires_at = now() - interval '5 minutes' WHERE id = $1`, [created.id])
+  await getPool().query(`UPDATE newsletters SET lease_expires_at = now() - interval '5 minutes' WHERE id = $1`, [
+    created.id,
+  ])
   await expect(renewLease(created.id, userId, lease.token)).rejects.toMatchObject({ code: 'lease' })
   await expect(
     saveNewsletter(created.id, {
@@ -296,7 +325,7 @@ test('an expired clean lease cannot be renewed or saved', async () => {
       expectedVersion: 1,
       saveId: 'expired',
       snapshot: titled(created.content, 'Too late'),
-    })
+    }),
   ).rejects.toMatchObject({ code: 'lease' })
   expect((await getNewsletter(created.id))?.content.masthead.title).toBe(created.content.masthead.title)
 })
@@ -353,15 +382,15 @@ test('lifecycle operations rotate or clear lease authority and keep history', as
     expectedVersion: restored.saveVersion,
   })
   expect(archived.token).toBeNull()
-  const row = await getPool().query<{ lease_token_hash: string | null; archived_at: Date | null }>(
-    'SELECT lease_token_hash, archived_at FROM newsletters WHERE id = $1',
-    [created.id]
-  )
+  const row = await getPool().query<{
+    lease_token_hash: string | null
+    archived_at: Date | null
+  }>('SELECT lease_token_hash, archived_at FROM newsletters WHERE id = $1', [created.id])
   expect(row.rows[0].lease_token_hash).toBeNull()
   expect(row.rows[0].archived_at).toBeTruthy()
   const history = await listRevisions(created.id)
   expect(history.map((revision) => revision.action)).toEqual(
-    expect.arrayContaining(['create', 'template_replacement', 'restore', 'archive'])
+    expect.arrayContaining(['create', 'template_replacement', 'restore', 'archive']),
   )
 })
 
@@ -381,6 +410,47 @@ test('a library delete removes a draft and leaves one another editor is using', 
   expect(visible).not.toContain(created.id)
   expect(visible).not.toContain(owned.id)
   expect((await getNewsletter(created.id))?.summary.archived).toBe(true)
+  expect((await listNewsletters(undefined, true)).map((item) => item.id)).toContain(created.id)
+  expect((await getNewsletter(owned.id))?.summary.leaseHeld).toBe(false)
+  expect((await listRevisions(created.id)).map((item) => item.action)).toEqual(
+    expect.arrayContaining(['create', 'archive']),
+  )
+  const archivedVersion = (await getNewsletter(created.id))!.summary.saveVersion
+  await restoreArchivedNewsletter(created.id, ada)
+  expect((await getNewsletter(created.id))?.summary).toMatchObject({
+    archived: false,
+    leaseHeld: false,
+    saveVersion: archivedVersion + 1,
+  })
+  expect((await listNewsletters()).map((item) => item.id)).toContain(created.id)
+  const lease = await acquireLease(created.id, grace)
+  await restoreArchivedNewsletter(created.id, ada)
+  await expect(renewLease(created.id, grace, lease.token)).resolves.toMatchObject({ renewed: true })
+  expect((await listRevisions(created.id)).filter((item) => item.action === 'unarchive')).toHaveLength(1)
+})
+
+test('resuming a tab revalidates its lease and returns the current version and content', async () => {
+  const userId = await editor('Resume')
+  const created = await createNewsletter(userId, 'ff')
+  const lease = await acquireLease(created.id, userId)
+  const saved = await saveNewsletter(created.id, {
+    userId,
+    token: lease.token,
+    expectedVersion: lease.saveVersion,
+    saveId: 'resume-save',
+    snapshot: titled(created.content, 'Latest saved'),
+  })
+  expect(await resumeLease(created.id, userId, lease.token)).toMatchObject({
+    saveVersion: saved.saveVersion,
+    content: { masthead: { title: 'Latest saved' } },
+  })
+  await getPool().query(`UPDATE newsletters SET lease_expires_at = now() - interval '1 second' WHERE id = $1`, [
+    created.id,
+  ])
+  await expect(resumeLease(created.id, userId, lease.token)).rejects.toMatchObject({ code: 'lease' })
+  const reacquired = await acquireLease(created.id, userId)
+  expect(reacquired.token).not.toBe(lease.token)
+  expect(reacquired.saveVersion).toBe(saved.saveVersion)
 })
 
 test('local accounts sign in with a password and keep the hash', async () => {
@@ -393,26 +463,44 @@ test('local accounts sign in with a password and keep the hash', async () => {
       password: 'correct-horse-12',
       role: 'editor',
     })
-    const stored = await getPool().query<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = $1', [userId])
+    const stored = await getPool().query<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = $1', [
+      userId,
+    ])
     expect(stored.rows[0].password_hash.startsWith('scrypt:')).toBe(true)
     expect(stored.rows[0].password_hash).not.toContain('correct-horse')
     expect(await authenticateLocalUser('local-ada@example.edu', 'wrong-password-1')).toBeNull()
     await expect(
-      createLocalUser({ displayName: 'Again', email: 'local-ada@example.edu', password: 'another-password', role: 'editor' })
+      createLocalUser({
+        displayName: 'Again',
+        email: 'local-ada@example.edu',
+        password: 'another-password',
+        role: 'editor',
+      }),
     ).rejects.toBeInstanceOf(AccountConflictError)
     const response = await localSession(
       new Request('http://127.0.0.1:3000/api/auth/local/session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:3000' },
-        body: JSON.stringify({ email: 'local-ada@example.edu', password: 'correct-horse-12' }),
-      })
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'http://127.0.0.1:3000',
+        },
+        body: JSON.stringify({
+          email: 'local-ada@example.edu',
+          password: 'correct-horse-12',
+        }),
+      }),
     )
     expect(response.status).toBe(200)
     expect(response.headers.get('set-cookie')).toContain('wsu_slate_session')
     await updateUserAccess({ userId, active: false })
     expect(await authenticateLocalUser('local-ada@example.edu', 'correct-horse-12')).toBeNull()
     await expect(
-      createLocalUser({ displayName: 'Short', email: 'short@example.edu', password: 'too-short', role: 'editor' })
+      createLocalUser({
+        displayName: 'Short',
+        email: 'short@example.edu',
+        password: 'too-short',
+        role: 'editor',
+      }),
     ).rejects.toThrow(/12/)
   } finally {
     process.env.AUTH_MODE = previous

@@ -45,7 +45,7 @@ test('keystrokes during an in-flight save become the next snapshot', async () =>
         responses.push(resolve)
       })
     },
-    () => `id-${sent.length + 1}`
+    () => `id-${sent.length + 1}`,
   )
   saver.note({ title: 'a' })
   const done = saver.flush()
@@ -53,7 +53,10 @@ test('keystrokes during an in-flight save become the next snapshot', async () =>
   saver.note({ title: 'ab' })
   responses[0]({ ok: true, saveVersion: 2, currentVersion: 2 })
   await vi.waitFor(() => expect(sent).toHaveLength(2))
-  expect(sent[1]).toMatchObject({ expectedVersion: 2, snapshot: { title: 'ab' } })
+  expect(sent[1]).toMatchObject({
+    expectedVersion: 2,
+    snapshot: { title: 'ab' },
+  })
   expect(sent[1].saveId).not.toBe(sent[0].saveId)
   responses[1]({ ok: true, saveVersion: 3, currentVersion: 3 })
   await expect(done).resolves.toBe('saved')
@@ -70,7 +73,7 @@ test('a lost response retries the same save id', async () => {
       if (attempt === 1) return { ok: false, code: 'network' }
       return { ok: true, saveVersion: 2, currentVersion: 2 }
     },
-    () => 'generated-once'
+    () => 'generated-once',
   )
   saver.note({ title: 'a' })
   await expect(saver.flush()).resolves.toBe('unsaved')
@@ -84,4 +87,30 @@ test('save success and lease release stay separate', () => {
   expect(finishNotice('saved', { released: false })).toBe('lease_lost')
   expect(finishNotice('saved', { released: true })).toBe('saved')
   expect(finishNotice('unsaved', null)).toBe('not_saved')
+})
+
+test('a rejected transport keeps the same immutable snapshot and notifies the UI for retry', async () => {
+  const sent: SaveRequest[] = []
+  const statuses: string[] = []
+  let fail = true
+  const saver = new SerializedSaver(
+    1,
+    async (request) => {
+      sent.push(request)
+      if (fail) throw new Error('offline')
+      return { ok: true, saveVersion: 2, currentVersion: 2 }
+    },
+    () => 'retry-id',
+    (status) => statuses.push(status),
+  )
+  const snapshot = { title: 'Original' }
+  saver.note(snapshot)
+  snapshot.title = 'Mutated elsewhere'
+  await expect(saver.flush()).resolves.toBe('unsaved')
+  expect(saver.hasPending).toBe(true)
+  fail = false
+  await expect(saver.flush()).resolves.toBe('saved')
+  expect(sent.map((item) => item.saveId)).toEqual(['retry-id', 'retry-id'])
+  expect(sent[0].snapshot).toEqual({ title: 'Original' })
+  expect(statuses).toEqual(['unsaved', 'saving', 'unsaved', 'saving', 'saved'])
 })

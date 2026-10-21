@@ -20,9 +20,9 @@ export function rememberLease(newsletterId: string, token: string | null) {
   entries.set(newsletterId, entry)
 }
 
-export function beginLeaseRequest(newsletterId: string, run: () => Promise<HeldLease>): Promise<HeldLease> {
+export function beginLeaseRequest<T extends HeldLease>(newsletterId: string, run: () => Promise<T>): Promise<T> {
   const entry = entries.get(newsletterId) ?? { token: null, pending: null }
-  if (entry.pending) return entry.pending
+  if (entry.pending) return entry.pending as Promise<T>
   entry.pending = run()
     .then((result) => {
       entry.token = result.token
@@ -34,7 +34,7 @@ export function beginLeaseRequest(newsletterId: string, run: () => Promise<HeldL
       throw error
     })
   entries.set(newsletterId, entry)
-  return entry.pending
+  return entry.pending as Promise<T>
 }
 
 export function clearTabLease(newsletterId: string) {

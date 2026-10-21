@@ -15,7 +15,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const { id } = await context.params
     const newsletter = await getNewsletter(id)
     if (!newsletter) return NextResponse.json({ error: 'Newsletter not found.' }, { status: 404 })
-    const body = (await request.json().catch(() => ({}))) as { export_options?: ExportOptions }
+    if (newsletter.summary.archived)
+      return NextResponse.json({ error: 'This draft was deleted. Restore it before exporting.' }, { status: 409 })
+    const body = (await request.json().catch(() => ({}))) as {
+      export_options?: ExportOptions
+      expectedVersion?: number
+    }
+    if (body.expectedVersion !== undefined && body.expectedVersion !== newsletter.summary.saveVersion)
+      return NextResponse.json({ error: 'The saved draft has changed. Reopen it before exporting.' }, { status: 409 })
     const exported = renderExportedHtml(newsletter.content, body.export_options)
     return new NextResponse(exported.html, {
       headers: {

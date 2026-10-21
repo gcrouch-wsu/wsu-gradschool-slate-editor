@@ -33,15 +33,7 @@ export class DocumentValidationError extends Error {
 const TEMPLATES = new Set<TemplateType>(['ff', 'briefing', 'letter'])
 const ALIGNS = new Set<TitleAlign>(['left', 'center', 'right'])
 const CARD_TYPES = new Set(['standard', 'event', 'resource', 'cta', 'letter'])
-const BUTTON_STYLES = new Set([
-  'button',
-  'pill',
-  'outlined',
-  'ghost',
-  'arrow',
-  'underlined',
-  'text-only',
-])
+const BUTTON_STYLES = new Set(['button', 'pill', 'outlined', 'ghost', 'arrow', 'underlined', 'text-only'])
 const BORDER_STYLES = new Set(['solid', 'dashed', 'dotted', 'double'])
 const TABLE_BORDERS = new Set(['none', 'light', 'medium', 'bold'])
 const FONT_WEIGHTS = new Set(['normal', 'bold', '600', '700'])
@@ -101,8 +93,9 @@ const RICH_HTML_OPTIONS: sanitizeHtml.IOptions = {
   allowedAttributes: {
     a: ['href', 'title'],
     img: ['src', 'alt', 'width', 'height'],
-    td: ['colspan', 'rowspan', 'style'],
-    th: ['colspan', 'rowspan', 'style'],
+    td: ['colspan', 'rowspan', 'style', 'headers'],
+    th: ['colspan', 'rowspan', 'style', 'scope', 'id'],
+    table: ['style', 'role'],
     '*': ['style'],
   },
   allowedStyles: {
@@ -189,9 +182,7 @@ export function decodeEmbeddedNewsletter(html: string): unknown {
   }
   const legacy = html.match(/<!-- WSU_NEWSLETTER_DATA:([\s\S]*?) -->/)
   if (!legacy) {
-    throw new DocumentValidationError(
-      'No embedded data found. This HTML was not exported from this editor.'
-    )
+    throw new DocumentValidationError('No embedded data found. This HTML was not exported from this editor.')
   }
   return JSON.parse(legacy[1])
 }
@@ -232,13 +223,12 @@ export function importNewsletterFromHtml(html: string): NewsletterData {
     if (error instanceof DocumentValidationError) throw error
     throw new DocumentValidationError('Corrupted embedded data')
   }
-  return normalizeNewsletter(migrateLegacyNewsletterShape(decoded), { requireShape: true })
+  return normalizeNewsletter(migrateLegacyNewsletterShape(decoded), {
+    requireShape: true,
+  })
 }
 
-export function normalizeNewsletter(
-  input: unknown,
-  options: { requireShape?: boolean } = {}
-): NewsletterData {
+export function normalizeNewsletter(input: unknown, options: { requireShape?: boolean } = {}): NewsletterData {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new DocumentValidationError('Newsletter document must be an object')
   }
@@ -261,9 +251,7 @@ export function normalizeNewsletter(
     }
   }
 
-  const template: TemplateType = TEMPLATES.has(raw.template as TemplateType)
-    ? (raw.template as TemplateType)
-    : 'ff'
+  const template: TemplateType = TEMPLATES.has(raw.template as TemplateType) ? (raw.template as TemplateType) : 'ff'
 
   return {
     template,
@@ -282,7 +270,12 @@ function migrateSocialObject(social: Record<string, unknown>): SocialLink[] {
     const platformData = social[platformKey]
     const label = platformKey.charAt(0).toUpperCase() + platformKey.slice(1)
     if (typeof platformData === 'string') {
-      migrated.push({ platform: label, url: platformData, icon: '', alt: label })
+      migrated.push({
+        platform: label,
+        url: platformData,
+        icon: '',
+        alt: label,
+      })
     } else if (platformData && typeof platformData === 'object') {
       const record = platformData as Record<string, unknown>
       migrated.push({
@@ -364,7 +357,12 @@ function normalizeMasthead(value: unknown): Masthead {
     banner_url: authorUrl(record.banner_url),
     banner_alt: text(record.banner_alt, 300),
     banner_align: align(record.banner_align, 'center'),
-    banner_padding: padding(record.banner_padding, { top: 20, right: 0, bottom: 0, left: 0 }),
+    banner_padding: padding(record.banner_padding, {
+      top: 20,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    }),
     title: text(record.title, 300),
     tagline: text(record.tagline, 500),
     preheader: text(record.preheader, 300),
@@ -389,9 +387,21 @@ function normalizeLayout(value: unknown): SectionLayout {
     divider_margin_bottom:
       record.divider_margin_bottom === undefined ? undefined : int(record.divider_margin_bottom, 0, 0, 200),
     title_align: align(record.title_align, 'left'),
-    padding_text: record.padding_text ? padding(record.padding_text, { top: 20, right: 20, bottom: 20, left: 20 }) : undefined,
+    padding_text: record.padding_text
+      ? padding(record.padding_text, {
+          top: 20,
+          right: 20,
+          bottom: 20,
+          left: 20,
+        })
+      : undefined,
     padding_image: record.padding_image
-      ? padding(record.padding_image, { top: 20, right: 15, bottom: 20, left: 0 })
+      ? padding(record.padding_image, {
+          top: 20,
+          right: 15,
+          bottom: 20,
+          left: 0,
+        })
       : undefined,
   }
 }
@@ -405,7 +415,8 @@ function normalizeCard(value: unknown): Card | null {
     body_html: body,
     links: links(record.links),
     spacing_bottom: record.spacing_bottom === undefined ? undefined : int(record.spacing_bottom, 20, 0, 200),
-    background_color: record.background_color === undefined ? undefined : optionalCssHex(record.background_color, '#f9f9f9'),
+    background_color:
+      record.background_color === undefined ? undefined : optionalCssHex(record.background_color, '#f9f9f9'),
     padding: record.padding ? padding(record.padding, { top: 20, right: 20, bottom: 20, left: 20 }) : undefined,
     border_width: record.border_width === undefined ? undefined : int(record.border_width, 0, 0, 20),
     border_color: record.border_color === undefined ? undefined : cssHex(record.border_color, '#e0e0e0'),
@@ -413,7 +424,8 @@ function normalizeCard(value: unknown): Card | null {
     table_border_style: TABLE_BORDERS.has(record.table_border_style as string)
       ? (record.table_border_style as 'none' | 'light' | 'medium' | 'bold')
       : undefined,
-    table_border_color: record.table_border_color === undefined ? undefined : cssHex(record.table_border_color, '#e0e0e0'),
+    table_border_color:
+      record.table_border_color === undefined ? undefined : cssHex(record.table_border_color, '#e0e0e0'),
     table_font_size: record.table_font_size === undefined ? undefined : int(record.table_font_size, 16, 8, 32),
     table_header_bg_color:
       record.table_header_bg_color === undefined ? undefined : cssHex(record.table_header_bg_color, '#f5f5f5'),
@@ -592,19 +604,27 @@ function normalizeSettings(value: unknown): Settings {
     container_width: int(record.container_width, 640, 320, 800),
     section_spacing: int(record.section_spacing, 24, 0, 200),
     show_section_borders: bool(record.show_section_borders, true),
-    padding_text: padding(record.padding_text, { top: 20, right: 20, bottom: 20, left: 20 }),
-    padding_image: padding(record.padding_image, { top: 20, right: 15, bottom: 20, left: 0 }),
+    padding_text: padding(record.padding_text, {
+      top: 20,
+      right: 20,
+      bottom: 20,
+      left: 20,
+    }),
+    padding_image: padding(record.padding_image, {
+      top: 20,
+      right: 15,
+      bottom: 20,
+      left: 0,
+    }),
     typography: normalizeTypography(record.typography),
     colors: normalizeColors(record.colors),
-    card_border_radius:
-      record.card_border_radius === undefined ? undefined : int(record.card_border_radius, 0, 0, 100),
+    card_border_radius: record.card_border_radius === undefined ? undefined : int(record.card_border_radius, 0, 0, 100),
     accent_bar_enabled: record.accent_bar_enabled === undefined ? undefined : bool(record.accent_bar_enabled, true),
     accent_bar_width: record.accent_bar_width === undefined ? undefined : int(record.accent_bar_width, 4, 0, 24),
     accent_bar_color: record.accent_bar_color === undefined ? undefined : cssHex(record.accent_bar_color, '#A60F2D'),
     accent_bar_shadow: shadow(record.accent_bar_shadow),
     card_shadow: shadow(record.card_shadow),
-    divider_margin_top:
-      record.divider_margin_top === undefined ? undefined : int(record.divider_margin_top, 0, 0, 200),
+    divider_margin_top: record.divider_margin_top === undefined ? undefined : int(record.divider_margin_top, 0, 0, 200),
     divider_margin_bottom:
       record.divider_margin_bottom === undefined ? undefined : int(record.divider_margin_bottom, 0, 0, 200),
     divider_color: record.divider_color === undefined ? undefined : cssHex(record.divider_color, '#e0e0e0'),
