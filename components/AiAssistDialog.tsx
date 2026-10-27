@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef } from 'react'
 import type { AiAction } from '@/lib/ai/instructions'
 import type { ReviewFinding, TextSuggestion } from '@/lib/ai/proposals'
+import SuggestionComparison from '@/components/SuggestionComparison'
 
 const button =
   'inline-flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wsu-crimson disabled:opacity-50'
@@ -94,7 +95,7 @@ export default function AiAssistDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-4 shadow-lg"
+        className="max-h-[90vh] w-full min-w-0 max-w-2xl overflow-x-hidden overflow-y-auto rounded-lg bg-white p-4 shadow-lg"
       >
         <h2 id={titleId} className="text-lg font-semibold">
           {title}
@@ -172,11 +173,8 @@ export default function AiAssistDialog({
         )}
         <ul className="mt-3 space-y-3">
           {(Array.isArray(suggestions) ? suggestions : []).map((suggestion, index) => (
-            <li key={index} className="rounded-md border border-wsu-border-light p-3">
-              <p className="text-sm font-semibold">Original wording</p>
-              <p className="mt-1 whitespace-pre-wrap break-words text-sm">{originalText || '(Empty)'}</p>
-              <p className="text-sm font-semibold">Proposed wording</p>
-              <p className="mt-1 whitespace-pre-wrap break-words text-sm">{suggestion.proposed}</p>
+            <li key={index} className="min-w-0 rounded-md border border-wsu-border-light p-3">
+              <SuggestionComparison original={originalText} proposed={suggestion.proposed} />
               <p className="mt-2 text-sm text-wsu-text-muted">{suggestion.reason}</p>
               <button
                 type="button"
@@ -189,19 +187,14 @@ export default function AiAssistDialog({
             </li>
           ))}
           {(Array.isArray(findings) ? findings : []).map((finding, index) => (
-            <li key={index} className="rounded-md border border-wsu-border-light p-3">
+            <li key={index} className="min-w-0 rounded-md border border-wsu-border-light p-3">
               <p className="text-sm font-semibold">
                 {finding.sectionTitle} / {finding.cardTitle} / {finding.field}
               </p>
               <p className="mt-1 text-sm">{finding.summary}</p>
               {finding.proposed && (
-                <>
-                  <p className="mt-2 text-sm font-semibold">Original wording</p>
-                  <p className="whitespace-pre-wrap break-words text-sm">{finding.originalText || '(Empty)'}</p>
-                  <p className="mt-2 text-sm font-semibold">Proposed wording</p>
-                </>
+                <SuggestionComparison original={finding.originalText} proposed={finding.proposed} />
               )}
-              {finding.proposed && <p className="mt-2 whitespace-pre-wrap break-words text-sm">{finding.proposed}</p>}
               <p className="mt-2 text-sm text-wsu-text-muted">{finding.reason}</p>
               {finding.proposed && (
                 <button

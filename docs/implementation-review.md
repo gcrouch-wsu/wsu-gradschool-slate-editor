@@ -1,6 +1,6 @@
 # Implementation review: newsletter workflow and AI editing
 
-This describes the uncommitted work on `development`. Nothing in this change set was committed, pushed, or deployed. Production databases and Vercel settings were not modified. `scripts/reset-password.mjs` is an unrelated untracked file and was left untouched.
+This describes the newsletter workflow and AI editing on `development`. `scripts/reset-password.mjs` is an unrelated untracked file and was left untouched. Production databases, authentication, and applied migrations 001–003 were not modified.
 
 ## Staff workflow
 
@@ -41,7 +41,7 @@ Actions, all optional and explicit:
 
 Generating a suggestion does not change or save the draft. Apply suggestion writes one undoable editor update and then uses the existing autosave. Try again and Discard leave the draft unchanged. Contributed stories keep their voice unless Apply full house style is checked. Graduate School writing uses the formal guide, including no contractions. Review findings name the section, card, and field.
 
-Provider calls stay in `lib/ai/provider.ts`. Context, validation, and the editor do not talk to the provider directly. The route is `POST /api/newsletters/[id]/ai`. It requires an editor session, same-origin checks, a live editing lease, and the expected save version. There is no new npm dependency. The client uses the Vercel AI Gateway Chat Completions endpoint:
+Provider calls stay in `lib/ai/provider.ts`. Context, validation, and the editor do not talk to the provider directly. The route is `POST /api/newsletters/[id]/ai`. It requires an editor session, same-origin checks, a live editing lease, and the expected save version. The provider client uses the Vercel AI Gateway Chat Completions endpoint. The only added dependency is `diff`, and it compares parsed words in the suggestion dialog. Gateway settings are:
 
 - `AI_GATEWAY_BASE_URL` optional, default `https://ai-gateway.vercel.sh/v1`
 - `AI_GATEWAY_API_KEY`
@@ -53,9 +53,13 @@ Each editor gets 30 requests per rolling hour and one in-flight request. A secon
 
 Suggestions are schema-checked. Unsafe HTML, unsupported fields, dropped URLs or Slate placeholders, and structural or layout changes are rejected. HTML still goes through the existing sanitizer. The renderer and accessibility checks remain authoritative. The response records the guide version and model. It does not store the proposal or expose credentials.
 
-Before a suggestion is requested, pending saves are flushed. The client keeps the newsletter id, target, save version, and a canonical snapshot. Apply rechecks the live lease and save version with the server. Apply is refused if the draft, target, lease, version, or field text changed, including after typing, reordering, deletion, a progress change, or another editor taking over. Repeated imported section keys are disambiguated by position and the frozen document. The server also checks authority after generation. Discard and Escape abort the browser request; late responses cannot populate a reopened dialog. The dialog traps keyboard focus and shows the original wording beside the proposal.
+Before a suggestion is requested, pending saves are flushed. The client keeps the newsletter id, target, save version, and a canonical snapshot. Apply rechecks the live lease and save version with the server. Apply is refused if the draft, target, lease, version, or field text changed, including after typing, reordering, deletion, a progress change, or another editor taking over. Repeated imported section keys are disambiguated by position and the frozen document. The server also checks authority after generation. Discard and Escape abort the browser request; late responses cannot populate a reopened dialog. The dialog traps keyboard focus.
 
-AI output rejects unknown properties, unsafe markup, changed link and image attributes (including `src`, `alt`, and dimensions), protected table/style/heading layout, and changed `http://`, `https://`, `mailto:` text or Slate placeholders. This is structural protection, not a guarantee that generated facts are correct; the editor reviews wording before applying it. The dialog shows original and proposed wording, traps keyboard focus, closes on Escape, and uses 44px controls. Long proposed wording wraps on a narrow screen.
+Suggestion comparison is display-only. The default Changes view renders the original wording with proposed edits: removed text is struck out on a light red background, added text is underlined on a light green background, and unchanged text is plain. A visible legend names both marks. Differences are word-level, with spaces kept on the neighboring word and punctuation compared separately, so one changed sentence does not strike the rest of the paragraph. A fully rewritten sentence is shown as one removed run and one added run. Side by side shows rendered Original and Proposed content, stacked on narrow screens. Headlines, preheaders, and review findings that propose replacement wording use the same comparison. Switching views does not modify or save the draft. Apply still writes the complete proposed field as one Undo step. There is no per-word accept or reject. Diff annotations never enter the saved document, preview, export, or Slate HTML.
+
+The comparison parses sanitized HTML with the existing `sanitizeRichHtml` rules and `htmlparser2`. It does not insert raw HTML. The `diff` package compares the parsed word tokens. That is its only job.
+
+AI output rejects unknown properties, unsafe markup, changed link and image attributes (including `src`, `alt`, and dimensions), protected table/style/heading layout, and changed `http://`, `https://`, `mailto:` text or Slate placeholders. This is structural protection, not a guarantee that generated facts are correct; the editor reviews wording before applying it. The dialog traps keyboard focus, closes on Escape, and uses 44px controls. Long comparison text wraps inside the dialog.
 
 ## Configuration
 
@@ -81,20 +85,18 @@ Progress retries, duplicate section keys, stale AI generation and Apply, cancell
 
 ## Verification
 
-Commands run from the repository root on October 27, 2026, after the follow-up fixes. The database suite was run before the browser suite. The production build was run after the Playwright dev server had exited.
+Commands run from the repository root on October 27, 2026, after the rendered comparison. The database suite was run separately from the browser suite. The production build was run after the Playwright dev server had exited.
 
 | Command | Result |
 | --- | --- |
 | `npm run check` | Exit 0 |
 | `npm run lint` | Exit 0, 0 errors, 9 existing warnings in `app/admin/page.tsx` and `app/editor-page.tsx` |
-| `npx vitest run --maxWorkers=1` | Exit 0. 7 files, 59 tests passed, including migration `004_issue_progress.sql` |
-| `npm run test:browser` | Exit 0. 10 passed (1.1m), including `editing.spec.ts`, the workflow suite, and the three-template HTML export check |
+| `npx vitest run --maxWorkers=1` | Exit 0. 8 files, 66 tests passed, including migration `004_issue_progress.sql` |
+| `npm run test:browser` | Exit 0. 10 passed (1.2m), including `editing.spec.ts`, the workflow suite, and the three-template HTML export check |
 | `npm run build` | Exit 0. Compiled, typechecked, and generated pages |
 | `style.md` in `.next/server/app/api/newsletters/[id]/ai/route.js.nft.json` | Present |
 
-Unit tests cover progress retry receipts, sent comparisons, resume and takeover sent canonicals, purge dependencies, AI concurrency, configured and unconfigured AI routes, takeover during generation, duplicate section keys, literal search, provider size limits, oversized review and headline context, and `http://` plus image-attribute rejection. Browser coverage includes a committed progress update whose response is lost, Undo clearing Changed since sent in the header, AI cancellation, keyboard focus, and takeover before Apply. `tests/browser/library.spec.ts` runs automated WCAG checks on exported Friday Focus, Briefing, and Slate Campaign HTML. Those checks are not Slate or email-client rendering. AI tests use mocked provider responses. No paid or live gateway request was made.
-
-Codex independently reviewed the follow-up changes and reran TypeScript, lint, all 59 unit/database tests, all 10 browser tests, and the production build. All passed; lint retained the same nine existing warnings. No additional application defect was identified in this pass. Live AI and Slate/email-client rendering remain unverified.
+Unit tests cover word changes, insertions, deletions, unchanged text, entities, punctuation, repeated words, lists, links, tables, rewritten sentences, and rejected unsafe markup, plus the earlier progress, lease, purge, and AI route checks. Browser coverage includes the rendered Changes view, keyboard switching to Side by side, stacked comparison at a 390px width, Apply saving the proposed HTML source, Undo restoring the original, and stale suggestions staying blocked. `tests/browser/library.spec.ts` runs automated WCAG checks on exported Friday Focus, Briefing, and Slate Campaign HTML. Those checks are not Slate or email-client rendering. AI tests use mocked provider responses. No paid or live gateway request was made. Live AI and Slate/email-client rendering remain unverified.
 
 Run the database suite separately from browser tests because migration tests temporarily rewrite SQL fixtures in the checkout. Do not run `next build` while the Playwright dev server is running. Playwright output is written outside the repo (`os.tmpdir()/slate-editor-playwright`). Writing it inside the project made Turbopack rebuild and reload the local editor while the preview test was open.
 
@@ -106,4 +108,5 @@ Run the database suite separately from browser tests because migration tests tem
 - AI suggestions are not stored as an audit record. The guide version and model are returned with the suggestion and shown in the dialog.
 - Duplicate copies the saved document. Unsaved editor state is not copied, and duplication does not take the source lease.
 - `AI_GATEWAY_MODEL` must be a current gateway model id. This change does not choose one.
-- Nothing in this change set was committed, pushed, or deployed. Production data, authentication, and migrations 001–003 were not modified. `scripts/reset-password.mjs` was left untouched.
+- Comparison marks are not stored. Apply accepts the whole proposed field or leaves the draft unchanged.
+- `scripts/reset-password.mjs` remains untracked and is not part of this work.
