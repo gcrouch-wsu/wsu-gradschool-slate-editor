@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { compareSuggestions, type BlockNode, type InlineNode } from '@/lib/ai/suggestion-diff'
+import { compareSuggestions, listEdits, presentDecisions, resolvedField, type BlockNode, type InlineNode } from '@/lib/ai/suggestion-diff'
 
 function runs(nodes: InlineNode[], into: { mark: string; text: string }[] = []) {
   for (const node of nodes) {
@@ -182,4 +182,116 @@ test('unsafe markup is removed before the comparison is built', () => {
   expect(serialized).toContain('click')
   expect(Array.isArray(views.proposed)).toBe(true)
   expect(views.proposed).not.toContain('<p>Hello</p>')
+})
+
+test('individual edits can be accepted or passed without rewriting the source strings', () => {
+  const original = '<p>Placeholder body copy for a standard item.</p>'
+  const proposed = '<p>Placeholder body text for a revised item.</p>'
+  const views = compareSuggestions(original, proposed)
+  const edits = listEdits(views.changes)
+  expect(edits.map((edit) => `${edit.removed} to ${edit.added}`)).toEqual(['copy to text', 'standard to revised'])
+
+  expect(resolvedField(original, proposed, {})).toBe(proposed)
+  expect(resolvedField(original, proposed, { [edits[0].id]: 'accept', [edits[1].id]: 'accept' })).toBe(proposed)
+
+  const passedFirst = resolvedField(original, proposed, { [edits[0].id]: 'pass' })
+  expect(passedFirst).toContain('Placeholder body copy for a revised item.')
+  expect(passedFirst).not.toContain('text')
+  expect(passedFirst).not.toContain('<ins')
+  expect(passedFirst).not.toContain('<del')
+  expect(passedFirst).not.toContain(edits[0].id)
+
+  const passedSecond = resolvedField(original, proposed, { [edits[1].id]: 'pass' })
+  expect(passedSecond).toContain('Placeholder body text for a standard item.')
+  expect(passedSecond).not.toContain('revised')
+
+  expect(original).toBe('<p>Placeholder body copy for a standard item.</p>')
+  expect(proposed).toBe('<p>Placeholder body text for a revised item.</p>')
+  expect(joined(views.changes, 'removed')).toContain('copy')
+  expect(joined(presentDecisions(views.changes, { [edits[0].id]: 'pass' }), 'removed')).not.toContain('copy')
+})
+
+test('passing an insertion, deletion, or punctuation change keeps the other words', () => {
+  const inserted = compareSuggestions('<p>The deadline is October 30.</p>', '<p>The application deadline is October 30.</p>')
+  const insertion = listEdits(inserted.changes)
+  expect(insertion).toHaveLength(1)
+  const insertedHtml = resolvedField(
+    '<p>The deadline is October 30.</p>',
+    '<p>The application deadline is October 30.</p>',
+    { [insertion[0].id]: 'pass' },
+  )
+  expect(insertedHtml).toContain('The deadline is October 30.')
+  expect(insertedHtml).not.toContain('application')
+
+  const deleted = listEdits(
+    compareSuggestions('<p>The application deadline is October 30.</p>', '<p>The deadline is October 30.</p>').changes,
+  )
+  expect(
+    resolvedField('<p>The application deadline is October 30.</p>', '<p>The deadline is October 30.</p>', {
+      [deleted[0].id]: 'pass',
+    }),
+  ).toContain('application')
+
+  const plainOriginal = 'The deadline is October 30.'
+  const plainProposed = 'The deadline is October 30'
+  const period = listEdits(compareSuggestions(plainOriginal, plainProposed).changes)
+  expect(resolvedField(plainOriginal, plainProposed, {}, true)).toBe(plainProposed)
+  expect(resolvedField(plainOriginal, plainProposed, { [period[0].id]: 'pass' }, true)).toBe(plainOriginal)
+  expect(resolvedField(plainOriginal, plainProposed, { [period[0].id]: 'pass' }, true)).not.toContain('<')
+})
+
+test('repeated words, entities, links, and styled text stay separate and safe', () => {
+  const repeatedOriginal = '<p>the cat and the dog</p>'
+  const repeatedProposed = '<p>the kitten and the puppy</p>'
+  const repeated = listEdits(compareSuggestions(repeatedOriginal, repeatedProposed).changes)
+  expect(repeated).toHaveLength(2)
+  const onePass = resolvedField(repeatedOriginal, repeatedProposed, { [repeated[0].id]: 'pass' })
+  expect(onePass).toContain('the cat and the puppy')
+  expect(onePass).not.toContain('kitten')
+  expect(onePass).not.toContain('dog')
+
+  const entityOriginal = '<p>Research &amp; development</p>'
+  const entityProposed = '<p>Research and development</p>'
+  const entity = listEdits(compareSuggestions(entityOriginal, entityProposed).changes)[0]
+  const keptEntity = resolvedField(entityOriginal, entityProposed, { [entity.id]: 'pass' })
+  expect(keptEntity).toContain('&amp;')
+  expect(keptEntity).not.toContain('>and<')
+  expect(keptEntity).not.toContain('<ins')
+  expect(entityOriginal).toBe('<p>Research &amp; development</p>')
+
+  const linkOriginal = '<p>See the <a href="https://gradschool.wsu.edu/dates">deadline</a> today.</p>'
+  const linkProposed = '<p>See the <a href="https://gradschool.wsu.edu/dates">application deadline</a> today.</p>'
+  const link = listEdits(compareSuggestions(linkOriginal, linkProposed).changes)[0]
+  const keptLink = resolvedField(linkOriginal, linkProposed, { [link.id]: 'pass' })
+  expect(keptLink).toContain('https://gradschool.wsu.edu/dates')
+  expect(keptLink).toContain('deadline')
+  expect(keptLink).not.toContain('application')
+  expect(keptLink).not.toContain('javascript:')
+
+  const styledOriginal = '<p style="text-align:center">The deadline is October 30.</p>'
+  const styledProposed = '<p style="text-align:center">The deadline is October 31.</p>'
+  const styled = listEdits(compareSuggestions(styledOriginal, styledProposed).changes)[0]
+  const keptStyle = resolvedField(styledOriginal, styledProposed, { [styled.id]: 'pass' })
+  expect(keptStyle).toMatch(/text-align:\s*center/)
+  expect(keptStyle).toContain('30')
+  expect(keptStyle).not.toContain('31')
+
+  const tableOriginal = '<table><tr><td>Room 101</td><td>9 a.m.</td></tr></table>'
+  const tableProposed = '<table><tr><td>Room 202</td><td>9 a.m.</td></tr></table>'
+  const table = listEdits(compareSuggestions(tableOriginal, tableProposed).changes)[0]
+  const keptRoom = resolvedField(tableOriginal, tableProposed, { [table.id]: 'pass' })
+  expect(keptRoom).toContain('101')
+  expect(keptRoom).toContain('9 a.m.')
+  expect(keptRoom).not.toContain('202')
+  expect(keptRoom).not.toContain('<del')
+
+  const unsafe = resolvedField(
+    '<p>Hello</p><script>alert(1)</script>',
+    '<p>Hello there</p><img src="javascript:alert(1)" alt="Campus">',
+    { e1: 'pass' },
+  )
+  expect(unsafe).not.toContain('alert')
+  expect(unsafe).not.toContain('<script')
+  expect(unsafe).not.toContain('javascript:')
+  expect(unsafe).toContain('Hello')
 })

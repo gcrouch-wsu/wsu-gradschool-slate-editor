@@ -55,7 +55,9 @@ Suggestions are schema-checked. Unsafe HTML, unsupported fields, dropped URLs or
 
 Before a suggestion is requested, pending saves are flushed. The client keeps the newsletter id, target, save version, and a canonical snapshot. Apply rechecks the live lease and save version with the server. Apply is refused if the draft, target, lease, version, or field text changed, including after typing, reordering, deletion, a progress change, or another editor taking over. Repeated imported section keys are disambiguated by position and the frozen document. The server also checks authority after generation. Discard and Escape abort the browser request; late responses cannot populate a reopened dialog. The dialog traps keyboard focus.
 
-Suggestion comparison is display-only. The default Changes view renders the original wording with proposed edits: removed text is struck out on a light red background, added text is underlined on a light green background, and unchanged text is plain. A visible legend names both marks. Differences are word-level, with spaces kept on the neighboring word and punctuation compared separately, so one changed sentence does not strike the rest of the paragraph. A fully rewritten sentence is shown as one removed run and one added run. Side by side shows rendered Original and Proposed content, stacked on narrow screens. Headlines, preheaders, and review findings that propose replacement wording use the same comparison. Switching views does not modify or save the draft. Apply still writes the complete proposed field as one Undo step. There is no per-word accept or reject. Diff annotations never enter the saved document, preview, export, or Slate HTML.
+Suggestion comparison is display-only until Apply. The default Changes view renders the original wording with proposed edits: removed text is struck out on a light red background, added text is underlined on a light green background, and unchanged text is plain. A visible legend names both marks. Differences are word-level, with spaces kept on the neighboring word and punctuation compared separately, so one changed sentence does not strike the rest of the paragraph. A fully rewritten sentence is shown as one removed run and one added run. The view switcher stays available: choose Changes to leave Side by side, or choose Side by side again. Arrow keys also move between the two views. Side by side shows rendered Original and Proposed content, stacked on narrow screens. Links in the comparison do not navigate away from the dialog. Headlines, preheaders, and review findings that propose replacement wording use the same comparison.
+
+Accept and Pass stay in an Individual edits section under the view switcher, in both Changes and Side by side. Each edit has Accept and Pass. Accept keeps the proposed wording for that edit. Pass keeps the original wording. Choosing the same button again clears that choice. Edits that have not been passed are included. Apply writes that result as one Undo step. If nothing was passed, Apply saves the proposed source string unchanged. Generating a suggestion, switching views, and marking edits do not modify or save the draft. Diff annotations never enter the saved document, preview, export, or Slate HTML. A passed edit is rebuilt from the parsed wording and then sanitized with the existing rich-HTML rules.
 
 The comparison parses sanitized HTML with the existing `sanitizeRichHtml` rules and `htmlparser2`. It does not insert raw HTML. The `diff` package compares the parsed word tokens. That is its only job.
 
@@ -85,18 +87,18 @@ Progress retries, duplicate section keys, stale AI generation and Apply, cancell
 
 ## Verification
 
-Commands run from the repository root on October 27, 2026, after the rendered comparison. The database suite was run separately from the browser suite. The production build was run after the Playwright dev server had exited.
+Commands run from the repository root on October 27, 2026, after individual edit choices and the Side by side return. The database suite was run separately from the browser suite. The production build was run after the Playwright dev server had exited.
 
 | Command | Result |
 | --- | --- |
 | `npm run check` | Exit 0 |
 | `npm run lint` | Exit 0, 0 errors, 9 existing warnings in `app/admin/page.tsx` and `app/editor-page.tsx` |
-| `npx vitest run --maxWorkers=1` | Exit 0. 8 files, 66 tests passed, including migration `004_issue_progress.sql` |
-| `npm run test:browser` | Exit 0. 10 passed (1.2m), including `editing.spec.ts`, the workflow suite, and the three-template HTML export check |
+| `npx vitest run --maxWorkers=1` | Exit 0. 8 files, 69 tests passed, including migration `004_issue_progress.sql` |
+| `npm run test:browser` | Exit 0. 10 passed (1.4m), including `editing.spec.ts`, the workflow suite, and the three-template HTML export check |
 | `npm run build` | Exit 0. Compiled, typechecked, and generated pages |
 | `style.md` in `.next/server/app/api/newsletters/[id]/ai/route.js.nft.json` | Present |
 
-Unit tests cover word changes, insertions, deletions, unchanged text, entities, punctuation, repeated words, lists, links, tables, rewritten sentences, and rejected unsafe markup, plus the earlier progress, lease, purge, and AI route checks. Browser coverage includes the rendered Changes view, keyboard switching to Side by side, stacked comparison at a 390px width, Apply saving the proposed HTML source, Undo restoring the original, and stale suggestions staying blocked. `tests/browser/library.spec.ts` runs automated WCAG checks on exported Friday Focus, Briefing, and Slate Campaign HTML. Those checks are not Slate or email-client rendering. AI tests use mocked provider responses. No paid or live gateway request was made. Live AI and Slate/email-client rendering remain unverified.
+Unit tests cover word changes, insertions, deletions, unchanged text, entities, punctuation, repeated words, lists, links, tables, rewritten sentences, rejected unsafe markup, and accept or pass of individual edits, plus the earlier progress, lease, purge, and AI route checks. Browser coverage includes returning from Side by side by click, by choosing it again, and by arrow key, stacked comparison at a 390px width, Apply of an untouched suggestion saving the proposed source, Apply of one passed edit and one accepted edit, Undo restoring the original, and stale suggestions staying blocked. `tests/browser/library.spec.ts` runs automated WCAG checks on exported Friday Focus, Briefing, and Slate Campaign HTML. Those checks are not Slate or email-client rendering. AI tests use mocked provider responses. No paid or live gateway request was made. Live AI and Slate/email-client rendering remain unverified.
 
 Run the database suite separately from browser tests because migration tests temporarily rewrite SQL fixtures in the checkout. Do not run `next build` while the Playwright dev server is running. Playwright output is written outside the repo (`os.tmpdir()/slate-editor-playwright`). Writing it inside the project made Turbopack rebuild and reload the local editor while the preview test was open.
 
@@ -108,5 +110,5 @@ Run the database suite separately from browser tests because migration tests tem
 - AI suggestions are not stored as an audit record. The guide version and model are returned with the suggestion and shown in the dialog.
 - Duplicate copies the saved document. Unsaved editor state is not copied, and duplication does not take the source lease.
 - `AI_GATEWAY_MODEL` must be a current gateway model id. This change does not choose one.
-- Comparison marks are not stored. Apply accepts the whole proposed field or leaves the draft unchanged.
+- Comparison marks are not stored. Apply saves the proposed source when no edit was passed, or the sanitized mix of accepted and passed edits. It is still one Undo step.
 - `scripts/reset-password.mjs` remains untracked and is not part of this work.

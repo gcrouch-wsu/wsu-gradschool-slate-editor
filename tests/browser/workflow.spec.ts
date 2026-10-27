@@ -135,7 +135,7 @@ test('filters, duplication, progress, and AI suggestions work together', async (
                 },
               ]
             : {
-                proposed: '<p>Clearer announcement copy.</p>',
+                proposed: '<p>Placeholder body text for a revised item.</p>',
                 reason: 'Section 3: lead with the subject.',
               },
         base: {
@@ -154,7 +154,7 @@ test('filters, duplication, progress, and AI suggestions work together', async (
   await review.getByRole('button', { name: 'Prepare suggestion', exact: true }).click()
   await expect(review.getByText('Deadlines and Important Information / Sample Announcement / body_html')).toBeVisible()
   await expect(review.getByRole('button', { name: 'Changes', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(review.getByText('The application deadline is October 30.')).toBeVisible()
+  await expect(review.getByText('The application deadline is October 30.').first()).toBeVisible()
   expect(await review.innerText()).not.toContain('<p>')
   await review.getByRole('button', { name: 'Discard', exact: true }).click()
   await expect(review).toHaveCount(0)
@@ -169,21 +169,20 @@ test('filters, duplication, progress, and AI suggestions work together', async (
     name: 'AI assistance for Sample Announcement',
   })
   await assist.getByRole('button', { name: 'Prepare suggestion', exact: true }).click()
-  await expect(assist.getByText('Clearer announcement copy.')).toBeVisible()
+  await expect(assist.getByText('revised').first()).toBeVisible()
   await expect(assist.getByRole('button', { name: 'Changes', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(assist.locator('del').first()).toBeVisible()
   await expect(assist.locator('ins').first()).toBeVisible()
   await expect(assist.getByText('Removed', { exact: true })).toBeVisible()
   await expect(assist.getByText('Added', { exact: true })).toBeVisible()
   expect(await assist.innerText()).not.toContain('<p>')
-  await assist.getByRole('button', { name: 'Changes', exact: true }).focus()
+  const changes = assist.getByRole('button', { name: 'Changes', exact: true })
+  const sideBySide = assist.getByRole('button', { name: 'Side by side', exact: true })
+  await changes.focus()
   await page.keyboard.press('Tab')
-  await expect(assist.getByRole('button', { name: 'Side by side', exact: true })).toBeFocused()
+  await expect(sideBySide).toBeFocused()
   await page.keyboard.press('Enter')
-  await expect(assist.getByRole('button', { name: 'Side by side', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  await expect(sideBySide).toHaveAttribute('aria-pressed', 'true')
   await expect(assist.getByRole('region', { name: 'Original' })).toBeVisible()
   await expect(assist.getByRole('region', { name: 'Proposed' })).toBeVisible()
   await expect(status).toHaveText('Saved')
@@ -194,18 +193,61 @@ test('filters, duplication, progress, and AI suggestions work together', async (
   const dialogBox = await assist.boundingBox()
   expect(originalBox!.x + originalBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width + 1)
   expect(proposedBox!.x + proposedBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width + 1)
+  await changes.click()
+  await expect(changes).toHaveAttribute('aria-pressed', 'true')
+  await expect(assist.locator('del').first()).toBeVisible()
+  await expect(assist.getByRole('region', { name: 'Original' })).toHaveCount(0)
   await page.setViewportSize({ width: 1280, height: 720 })
+  await sideBySide.click()
+  await expect(sideBySide).toHaveAttribute('aria-pressed', 'true')
+  await sideBySide.click()
+  await expect(changes).toHaveAttribute('aria-pressed', 'true')
+  await changes.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(sideBySide).toBeFocused()
+  await expect(sideBySide).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('ArrowLeft')
+  await expect(changes).toBeFocused()
+  await expect(changes).toHaveAttribute('aria-pressed', 'true')
+  await expect(status).toHaveText('Saved')
   await assist.getByRole('button', { name: 'Apply suggestion', exact: true }).focus()
   await page.keyboard.press('Enter')
   await expect(assist).toHaveCount(0)
   await expect(status).toHaveText('Saved')
   await expect
     .poll(async () => JSON.stringify(await (await context.request.get(`/api/newsletters/${copyId}`)).json()))
-    .toContain('<p>Clearer announcement copy.</p>')
+    .toContain('<p>Placeholder body text for a revised item.</p>')
   await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect
     .poll(async () => JSON.stringify(await (await context.request.get(`/api/newsletters/${copyId}`)).json()))
-    .not.toContain('Clearer announcement copy.')
+    .not.toContain('revised')
+
+  await page
+    .getByRole('button', {
+      name: 'AI assistance for Sample Announcement',
+      exact: true,
+    })
+    .click()
+  const partial = page.getByRole('dialog', {
+    name: 'AI assistance for Sample Announcement',
+  })
+  await partial.getByRole('button', { name: 'Prepare suggestion', exact: true }).click()
+  await partial.getByRole('button', { name: 'Pass on this edit: copy to text', exact: true }).click()
+  await partial.getByRole('button', { name: 'Accept this edit: standard to revised', exact: true }).click()
+  await expect(status).toHaveText('Saved')
+  await partial.getByRole('button', { name: 'Apply suggestion', exact: true }).click()
+  await expect(partial).toHaveCount(0)
+  await expect
+    .poll(async () => JSON.stringify(await (await context.request.get(`/api/newsletters/${copyId}`)).json()))
+    .toContain('Placeholder body copy for a revised item.')
+  const mixed = JSON.stringify(await (await context.request.get(`/api/newsletters/${copyId}`)).json())
+  expect(mixed).not.toContain('<ins')
+  expect(mixed).not.toContain('<del')
+  expect(mixed).not.toContain('body text for a revised')
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect
+    .poll(async () => JSON.stringify(await (await context.request.get(`/api/newsletters/${copyId}`)).json()))
+    .not.toContain('revised')
 
   if (!(await page.getByLabel('Issue title', { exact: true }).isVisible())) {
     await page.getByRole('button', { name: 'Masthead', exact: true }).click()
@@ -220,7 +262,7 @@ test('filters, duplication, progress, and AI suggestions work together', async (
     name: 'AI assistance for Sample Announcement',
   })
   await second.getByRole('button', { name: 'Prepare suggestion', exact: true }).click()
-  await expect(second.getByText('Clearer announcement copy.')).toBeVisible()
+  await expect(second.getByRole('button', { name: 'Pass on this edit: copy to text', exact: true })).toBeVisible()
   await page.getByLabel('Issue title', { exact: true }).fill('Typed while the suggestion was open', { force: true })
   await second.getByRole('button', { name: 'Apply suggestion', exact: true }).click()
   await expect(second.getByRole('alert')).toContainText('out of date')
@@ -303,7 +345,7 @@ test('AI cancellation, focus trapping, and takeover cannot apply an old proposal
   release()
   await expect(dialog.getByText('A proposal that must not be applied.')).toHaveCount(0)
   await dialog.getByRole('button', { name: 'Prepare suggestion', exact: true }).click()
-  await expect(dialog.getByText('A proposal that must not be applied.')).toBeVisible()
+  await expect(dialog.getByText('A proposal that must not be applied.').first()).toBeVisible()
   await dialog.getByRole('button', { name: 'Apply suggestion', exact: true }).focus()
   await page.keyboard.press('Tab')
   await expect(dialog.getByRole('button', { name: 'Edit for clarity', exact: true })).toBeFocused()

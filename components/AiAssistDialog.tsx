@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useRef } from 'react'
+import { useCallback, useEffect, useId, useRef } from 'react'
 import type { AiAction } from '@/lib/ai/instructions'
 import type { ReviewFinding, TextSuggestion } from '@/lib/ai/proposals'
 import SuggestionComparison from '@/components/SuggestionComparison'
@@ -55,6 +55,10 @@ export default function AiAssistDialog({
 }) {
   const titleId = useId()
   const dialogRef = useRef<HTMLDivElement>(null)
+  const chosen = useRef(new Map<string, string>())
+  const remember = useCallback((key: string, text: string) => {
+    chosen.current.set(key, text)
+  }, [])
   useEffect(() => {
     if (!open) return
     const previous = document.activeElement as HTMLElement | null
@@ -174,13 +178,20 @@ export default function AiAssistDialog({
         <ul className="mt-3 space-y-3">
           {(Array.isArray(suggestions) ? suggestions : []).map((suggestion, index) => (
             <li key={index} className="min-w-0 rounded-md border border-wsu-border-light p-3">
-              <SuggestionComparison original={originalText} proposed={suggestion.proposed} />
+              <SuggestionComparison
+                original={originalText}
+                proposed={suggestion.proposed}
+                plain={action === 'headlines' || action === 'preheader'}
+                onResolve={(text) => remember(`suggestion-${index}`, text)}
+              />
               <p className="mt-2 text-sm text-wsu-text-muted">{suggestion.reason}</p>
               <button
                 type="button"
                 disabled={busy}
                 className={`${button} mt-2 border-wsu-crimson bg-white text-wsu-crimson`}
-                onClick={() => onApply(suggestion)}
+                onClick={() =>
+                  onApply({ ...suggestion, proposed: chosen.current.get(`suggestion-${index}`) ?? suggestion.proposed })
+                }
               >
                 Apply suggestion
               </button>
@@ -193,7 +204,12 @@ export default function AiAssistDialog({
               </p>
               <p className="mt-1 text-sm">{finding.summary}</p>
               {finding.proposed && (
-                <SuggestionComparison original={finding.originalText} proposed={finding.proposed} />
+                <SuggestionComparison
+                  original={finding.originalText}
+                  proposed={finding.proposed}
+                  plain={finding.field !== 'body_html'}
+                  onResolve={(text) => remember(`finding-${index}`, text)}
+                />
               )}
               <p className="mt-2 text-sm text-wsu-text-muted">{finding.reason}</p>
               {finding.proposed && (
@@ -201,7 +217,12 @@ export default function AiAssistDialog({
                   type="button"
                   disabled={busy}
                   className={`${button} mt-2 border-wsu-crimson bg-white text-wsu-crimson`}
-                  onClick={() => onApplyFinding(finding)}
+                  onClick={() =>
+                    onApplyFinding({
+                      ...finding,
+                      proposed: chosen.current.get(`finding-${index}`) ?? finding.proposed,
+                    })
+                  }
                 >
                   Apply suggestion
                 </button>

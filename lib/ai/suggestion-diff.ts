@@ -4,19 +4,50 @@ import type { ChildNode, Element } from 'domhandler'
 import { sanitizeRichHtml } from '@/lib/rich-html'
 
 export type DiffMark = 'same' | 'added' | 'removed'
+export type EditDecision = 'accept' | 'pass'
 
 export type InlineNode =
-  | { type: 'text'; text: string; mark: DiffMark }
-  | { type: 'break'; mark: DiffMark }
-  | { type: 'image'; alt: string; src: string; mark: DiffMark }
-  | { type: 'link'; href: string; title: string; mark: DiffMark; children: InlineNode[] }
-  | { type: 'format'; tag: 'strong' | 'em' | 'u' | 's' | 'sub' | 'sup' | 'span'; mark: DiffMark; children: InlineNode[] }
+  | { type: 'text'; text: string; mark: DiffMark; editId?: string }
+  | { type: 'break'; mark: DiffMark; editId?: string }
+  | { type: 'image'; alt: string; src: string; mark: DiffMark; editId?: string }
+  | { type: 'link'; href: string; title: string; mark: DiffMark; editId?: string; children: InlineNode[] }
+  | {
+      type: 'format'
+      tag: 'strong' | 'em' | 'u' | 's' | 'sub' | 'sup' | 'span'
+      mark: DiffMark
+      editId?: string
+      attrs?: Record<string, string>
+      children: InlineNode[]
+    }
 
 export type BlockNode =
-  | { type: 'block'; tag: string; mark: DiffMark; children: InlineNode[] }
-  | { type: 'list'; ordered: boolean; mark: DiffMark; items: { mark: DiffMark; children: InlineNode[]; blocks: BlockNode[] }[] }
-  | { type: 'table'; mark: DiffMark; rows: { cells: { header: boolean; mark: DiffMark; children: InlineNode[] }[] }[] }
-  | { type: 'rule'; mark: DiffMark }
+  | { type: 'block'; tag: string; mark: DiffMark; editId?: string; attrs?: Record<string, string>; children: InlineNode[] }
+  | {
+      type: 'list'
+      ordered: boolean
+      mark: DiffMark
+      editId?: string
+      attrs?: Record<string, string>
+      items: { mark: DiffMark; editId?: string; attrs?: Record<string, string>; children: InlineNode[]; blocks: BlockNode[] }[]
+    }
+  | {
+      type: 'table'
+      mark: DiffMark
+      editId?: string
+      attrs?: Record<string, string>
+      rows: {
+        editId?: string
+        attrs?: Record<string, string>
+        cells: { header: boolean; mark: DiffMark; editId?: string; attrs?: Record<string, string>; children: InlineNode[] }[]
+      }[]
+    }
+  | { type: 'rule'; mark: DiffMark; editId?: string }
+
+export interface SuggestionEdit {
+  id: string
+  removed: string
+  added: string
+}
 
 export interface SuggestionViews {
   changes: BlockNode[]
@@ -41,11 +72,11 @@ interface Atom {
   src?: string
 }
 
-type FlowSource = { type: 'flow'; tag: string; nodes: HtmlNode[] }
-type ItemSource = { nodes: HtmlNode[]; nested: Source[] }
-type ListSource = { type: 'list'; ordered: boolean; items: ItemSource[] }
-type CellSource = { header: boolean; nodes: HtmlNode[] }
-type TableSource = { type: 'table'; rows: { cells: CellSource[] }[] }
+type FlowSource = { type: 'flow'; tag: string; attrs: Record<string, string>; nodes: HtmlNode[] }
+type ItemSource = { attrs: Record<string, string>; nodes: HtmlNode[]; nested: Source[] }
+type ListSource = { type: 'list'; ordered: boolean; attrs: Record<string, string>; items: ItemSource[] }
+type CellSource = { header: boolean; attrs: Record<string, string>; nodes: HtmlNode[] }
+type TableSource = { type: 'table'; attrs: Record<string, string>; rows: { attrs: Record<string, string>; cells: CellSource[] }[] }
 type RuleSource = { type: 'rule' }
 type Source = FlowSource | ListSource | TableSource | RuleSource
 
@@ -121,7 +152,7 @@ function blocksFrom(nodes: HtmlNode[]): Source[] {
       inline = []
       return
     }
-    sources.push({ type: 'flow', tag: 'p', nodes: inline })
+    sources.push({ type: 'flow', tag: 'p', attrs: {}, nodes: inline })
     inline = []
   }
   for (const node of nodes) {
@@ -140,7 +171,7 @@ function blocksFrom(nodes: HtmlNode[]): Source[] {
     else if (node.tag === 'hr') sources.push({ type: 'rule' })
     else if ((node.tag === 'div' || node.tag === 'blockquote') && containsBlock(node)) {
       sources.push(...blocksFrom(node.children))
-    } else sources.push({ type: 'flow', tag: node.tag, nodes: node.children })
+    } else sources.push({ type: 'flow', tag: node.tag, attrs: node.attrs, nodes: node.children })
   }
   flush()
   return sources
@@ -151,6 +182,7 @@ function listSource(node: Extract<HtmlNode, { type: 'element' }>): ListSource {
   return {
     type: 'list',
     ordered: node.tag === 'ol',
+    attrs: node.attrs,
     items: items.map((item) => {
       const nested: Source[] = []
       const flow: HtmlNode[] = []
@@ -159,28 +191,29 @@ function listSource(node: Extract<HtmlNode, { type: 'element' }>): ListSource {
           nested.push(...blocksFrom([child]))
         } else flow.push(child)
       }
-      return { nodes: flow, nested }
+      return { attrs: item.attrs, nodes: flow, nested }
     }),
   }
 }
 
 function tableSource(node: Extract<HtmlNode, { type: 'element' }>): TableSource {
-  const rows: { cells: CellSource[] }[] = []
+  const rows: { attrs: Record<string, string>; cells: CellSource[] }[] = []
   const walk = (current: HtmlNode) => {
     if (!isElement(current)) return
     if (current.tag === 'tr') {
       rows.push({
+        attrs: current.attrs,
         cells: current.children
           .filter(isElement)
           .filter((cell) => cell.tag === 'td' || cell.tag === 'th')
-          .map((cell) => ({ header: cell.tag === 'th', nodes: cell.children })),
+          .map((cell) => ({ header: cell.tag === 'th', attrs: cell.attrs, nodes: cell.children })),
       })
       return
     }
     current.children.forEach(walk)
   }
   walk(node)
-  return { type: 'table', rows }
+  return { type: 'table', attrs: node.attrs, rows }
 }
 
 function sourceKey(source: Source): string {
@@ -214,14 +247,12 @@ function flatten(nodes: HtmlNode[], stack: Layer[] = [], atoms: Atom[] = []): At
       })
       continue
     }
-    if (node.tag === 'span') {
-      flatten(node.children, stack, atoms)
-      continue
-    }
     const next = stack.slice()
     if (node.tag === 'a') {
       const href = safeHref(node.attrs.href || '')
       if (href) next.push({ tag: 'a', attrs: { href, title: (node.attrs.title || '').slice(0, 300) } })
+    } else if (node.tag === 'span') {
+      next.push({ tag: 'span', attrs: node.attrs })
     } else if (INLINE.has(node.tag)) {
       next.push({ tag: displayTag(node.tag), attrs: {} })
     }
@@ -275,10 +306,11 @@ function sameStack(left: Layer[], right: Layer[]): boolean {
   )
 }
 
-function groupAtoms(parts: { atom: Atom; mark: DiffMark }[]): {
+function groupAtoms(parts: { atom: Atom; mark: DiffMark; editId?: string }[]): {
   text: string
   stack: Layer[]
   mark: DiffMark
+  editId?: string
   kind: Atom['kind']
   alt?: string
   src?: string
@@ -287,6 +319,7 @@ function groupAtoms(parts: { atom: Atom; mark: DiffMark }[]): {
     text: string
     stack: Layer[]
     mark: DiffMark
+    editId?: string
     kind: Atom['kind']
     alt?: string
     src?: string
@@ -298,6 +331,7 @@ function groupAtoms(parts: { atom: Atom; mark: DiffMark }[]): {
       last.kind === 'text' &&
       part.atom.kind === 'text' &&
       last.mark === part.mark &&
+      last.editId === part.editId &&
       sameStack(last.stack, part.atom.stack)
     ) {
       last.text += part.atom.text
@@ -307,6 +341,7 @@ function groupAtoms(parts: { atom: Atom; mark: DiffMark }[]): {
       text: part.atom.text,
       stack: part.atom.stack,
       mark: part.mark,
+      editId: part.editId,
       kind: part.atom.kind,
       alt: part.atom.alt,
       src: part.atom.src,
@@ -320,6 +355,7 @@ function inlineFromGroups(
     text: string
     stack: Layer[]
     mark: DiffMark
+    editId?: string
     kind: Atom['kind']
     alt?: string
     src?: string
@@ -347,12 +383,13 @@ function inlineFromGroups(
     }
     closeUntil(shared)
     while (open.length < group.stack.length) open.push({ layer: group.stack[open.length], children: [] })
+    const identity = group.editId ? { editId: group.editId } : {}
     if (group.kind === 'image') {
-      container().push({ type: 'image', alt: group.alt || '', src: group.src || '', mark: group.mark })
+      container().push({ type: 'image', alt: group.alt || '', src: group.src || '', mark: group.mark, ...identity })
     } else if (group.kind === 'break') {
-      container().push({ type: 'break', mark: group.mark })
+      container().push({ type: 'break', mark: group.mark, ...identity })
     } else if (group.text) {
-      container().push({ type: 'text', text: group.text, mark: group.mark })
+      container().push({ type: 'text', text: group.text, mark: group.mark, ...identity })
     }
   }
   closeUntil(0)
@@ -367,15 +404,17 @@ function layerNode(layer: Layer, children: InlineNode[]): InlineNode {
   if (tag === 'strong' || tag === 'em' || tag === 'u' || tag === 's' || tag === 'sub' || tag === 'sup') {
     return { type: 'format', tag, mark: 'same', children }
   }
-  return { type: 'format', tag: 'span', mark: 'same', children }
+  return { type: 'format', tag: 'span', mark: 'same', attrs: layer.attrs, children }
 }
 
-function inlineFromAtoms(atoms: Atom[], mark: DiffMark): InlineNode[] {
-  return inlineFromGroups(groupAtoms(atoms.map((atom) => ({ atom, mark }))))
+type MarkedAtom = { atom: Atom; mark: DiffMark; editId?: string }
+
+function inlineFromAtoms(atoms: Atom[], mark: DiffMark, editId?: string): InlineNode[] {
+  return inlineFromGroups(groupAtoms(atoms.map((atom) => ({ atom, mark, editId }))))
 }
 
-function presentChanges(parts: { atom: Atom; mark: DiffMark }[]): { atom: Atom; mark: DiffMark }[] {
-  const presented: { atom: Atom; mark: DiffMark }[] = []
+function presentChanges(parts: MarkedAtom[]): MarkedAtom[] {
+  const presented: MarkedAtom[] = []
   let index = 0
   while (index < parts.length) {
     if (parts[index].mark === 'same') {
@@ -383,8 +422,8 @@ function presentChanges(parts: { atom: Atom; mark: DiffMark }[]): { atom: Atom; 
       index += 1
       continue
     }
-    const removed: { atom: Atom; mark: DiffMark }[] = []
-    const added: { atom: Atom; mark: DiffMark }[] = []
+    const removed: MarkedAtom[] = []
+    const added: MarkedAtom[] = []
     while (index < parts.length && parts[index].mark !== 'same') {
       if (parts[index].mark === 'removed') removed.push(parts[index])
       else added.push(parts[index])
@@ -395,134 +434,250 @@ function presentChanges(parts: { atom: Atom; mark: DiffMark }[]): { atom: Atom; 
   return presented
 }
 
-function diffInline(original: HtmlNode[], proposed: HtmlNode[]): InlineNode[] {
-  const parts = align(flatten(original), flatten(proposed), (atom) => atom.text)
-  return inlineFromGroups(
-    groupAtoms(
-      presentChanges(
-        parts.map((part) =>
-          part.kind === 'removed'
-            ? { atom: part.left, mark: 'removed' as const }
-            : { atom: part.right, mark: part.kind === 'added' ? ('added' as const) : ('same' as const) },
-        ),
-      ),
-    ),
-  )
+function createEditIds(): () => string {
+  let count = 0
+  return () => {
+    count += 1
+    return `e${count}`
+  }
 }
 
-function renderSource(source: Source, mark: DiffMark): BlockNode {
-  if (source.type === 'rule') return { type: 'rule', mark }
+function diffInline(original: HtmlNode[], proposed: HtmlNode[], nextId: () => string): InlineNode[] {
+  const aligned = align(flatten(original), flatten(proposed), (atom) => atom.text)
+  const marked: MarkedAtom[] = []
+  let index = 0
+  while (index < aligned.length) {
+    const part = aligned[index]
+    if (part.kind === 'same') {
+      marked.push({ atom: part.right, mark: 'same' })
+      index += 1
+      continue
+    }
+    const editId = nextId()
+    while (index < aligned.length && aligned[index].kind !== 'same') {
+      const current = aligned[index]
+      marked.push(
+        current.kind === 'removed'
+          ? { atom: current.left, mark: 'removed', editId }
+          : { atom: current.right, mark: 'added', editId },
+      )
+      index += 1
+    }
+  }
+  return inlineFromGroups(groupAtoms(presentChanges(marked)))
+}
+
+function renderSource(source: Source, mark: DiffMark, editId?: string): BlockNode {
+  const identity = editId ? { editId } : {}
+  if (source.type === 'rule') return { type: 'rule', mark, ...identity }
   if (source.type === 'flow') {
-    return { type: 'block', tag: source.tag, mark, children: inlineFromAtoms(flatten(source.nodes), mark) }
+    const children = inlineFromAtoms(flatten(source.nodes), mark, editId)
+    return { type: 'block', tag: source.tag, mark, attrs: source.attrs, ...identity, children }
   }
   if (source.type === 'list') {
     return {
       type: 'list',
       ordered: source.ordered,
       mark,
+      attrs: source.attrs,
+      ...identity,
       items: source.items.map((item) => ({
         mark,
-        children: inlineFromAtoms(flatten(item.nodes), mark),
-        blocks: item.nested.map((nested) => renderSource(nested, mark)),
+        ...identity,
+        attrs: item.attrs,
+        children: inlineFromAtoms(flatten(item.nodes), mark, editId),
+        blocks: item.nested.map((nested) => renderSource(nested, mark, editId)),
       })),
     }
   }
   return {
     type: 'table',
     mark,
+    attrs: source.attrs,
+    ...identity,
     rows: source.rows.map((row) => ({
+      ...identity,
+      attrs: row.attrs,
       cells: row.cells.map((cell) => ({
         header: cell.header,
         mark,
-        children: inlineFromAtoms(flatten(cell.nodes), mark),
+        attrs: cell.attrs,
+        ...identity,
+        children: inlineFromAtoms(flatten(cell.nodes), mark, editId),
       })),
     })),
   }
 }
 
-function mergeSource(original: Source, proposed: Source): BlockNode {
+function replacementPair<T>(parts: Aligned<T>[], index: number): { left: T; right: T } | null {
+  const part = parts[index]
+  const next = parts[index + 1]
+  if (!next || part.kind === 'same' || next.kind === 'same') return null
+  if (part.kind === 'removed' && next.kind === 'added') return { left: part.left, right: next.right }
+  if (part.kind === 'added' && next.kind === 'removed') return { left: next.left, right: part.right }
+  return null
+}
+
+function mergeSource(original: Source, proposed: Source, nextId: () => string): BlockNode {
   if (original.type === 'flow' && proposed.type === 'flow') {
-    return { type: 'block', tag: proposed.tag, mark: 'same', children: diffInline(original.nodes, proposed.nodes) }
+    return {
+      type: 'block',
+      tag: proposed.tag,
+      mark: 'same',
+      attrs: proposed.attrs,
+      children: diffInline(original.nodes, proposed.nodes, nextId),
+    }
   }
   if (original.type === 'list' && proposed.type === 'list') {
-    return {
-      type: 'list',
-      ordered: proposed.ordered,
-      mark: 'same',
-      items: align(original.items, proposed.items, () => 'item').map((part) => {
-        if (part.kind === 'removed') {
-          return {
-            mark: 'removed' as const,
-            children: inlineFromAtoms(flatten(part.left.nodes), 'removed'),
-            blocks: part.left.nested.map((nested) => renderSource(nested, 'removed')),
-          }
-        }
-        if (part.kind === 'added') {
-          return {
-            mark: 'added' as const,
-            children: inlineFromAtoms(flatten(part.right.nodes), 'added'),
-            blocks: part.right.nested.map((nested) => renderSource(nested, 'added')),
-          }
-        }
-        return {
-          mark: 'same' as const,
-          children: diffInline(part.left.nodes, part.right.nodes),
-          blocks: diffSources(part.left.nested, part.right.nested),
-        }
-      }),
+    const parts = align(original.items, proposed.items, () => 'item')
+    const items: Extract<BlockNode, { type: 'list' }>['items'] = []
+    for (let index = 0; index < parts.length; index += 1) {
+      const pair = replacementPair(parts, index)
+      const part = parts[index]
+      if (pair) {
+        const editId = nextId()
+        items.push({
+          mark: 'removed',
+          editId,
+          attrs: pair.left.attrs,
+          children: inlineFromAtoms(flatten(pair.left.nodes), 'removed', editId),
+          blocks: pair.left.nested.map((nested) => renderSource(nested, 'removed', editId)),
+        })
+        items.push({
+          mark: 'added',
+          editId,
+          attrs: pair.right.attrs,
+          children: inlineFromAtoms(flatten(pair.right.nodes), 'added', editId),
+          blocks: pair.right.nested.map((nested) => renderSource(nested, 'added', editId)),
+        })
+        index += 1
+        continue
+      }
+      if (part.kind === 'removed' || part.kind === 'added') {
+        const editId = nextId()
+        const item = part.kind === 'removed' ? part.left : part.right
+        items.push({
+          mark: part.kind,
+          editId,
+          attrs: item.attrs,
+          children: inlineFromAtoms(flatten(item.nodes), part.kind, editId),
+          blocks: item.nested.map((nested) => renderSource(nested, part.kind, editId)),
+        })
+        continue
+      }
+      items.push({
+        mark: 'same',
+        attrs: part.right.attrs,
+        children: diffInline(part.left.nodes, part.right.nodes, nextId),
+        blocks: diffSources(part.left.nested, part.right.nested, nextId),
+      })
     }
+    return { type: 'list', ordered: proposed.ordered, mark: 'same', attrs: proposed.attrs, items }
   }
   if (original.type === 'table' && proposed.type === 'table') {
-    return {
-      type: 'table',
-      mark: 'same',
-      rows: align(original.rows, proposed.rows, () => 'row').map((part) => {
-        if (part.kind !== 'same') {
-          const row = part.kind === 'removed' ? part.left : part.right
-          const mark = part.kind === 'removed' ? 'removed' : 'added'
-          return {
-            cells: row.cells.map((cell) => ({
+    const parts = align(original.rows, proposed.rows, () => 'row')
+    const rows: Extract<BlockNode, { type: 'table' }>['rows'] = []
+    for (let index = 0; index < parts.length; index += 1) {
+      const pair = replacementPair(parts, index)
+      const part = parts[index]
+      if (pair || part.kind !== 'same') {
+        const editId = nextId()
+        const removed = pair ? pair.left : part.kind === 'removed' ? part.left : null
+        const added = pair ? pair.right : part.kind === 'added' ? part.right : null
+        if (removed) {
+          rows.push({
+            editId,
+            attrs: removed.attrs,
+            cells: removed.cells.map((cell) => ({
               header: cell.header,
-              mark,
-              children: inlineFromAtoms(flatten(cell.nodes), mark),
+              mark: 'removed' as const,
+              editId,
+              attrs: cell.attrs,
+              children: inlineFromAtoms(flatten(cell.nodes), 'removed', editId),
             })),
+          })
+        }
+        if (added) {
+          rows.push({
+            editId,
+            attrs: added.attrs,
+            cells: added.cells.map((cell) => ({
+              header: cell.header,
+              mark: 'added' as const,
+              editId,
+              attrs: cell.attrs,
+              children: inlineFromAtoms(flatten(cell.nodes), 'added', editId),
+            })),
+          })
+        }
+        if (pair) index += 1
+        continue
+      }
+      const cellParts = align(part.left.cells, part.right.cells, (cell) => (cell.header ? 'th' : 'td'))
+      const cells: Extract<BlockNode, { type: 'table' }>['rows'][number]['cells'] = []
+      for (let cellIndex = 0; cellIndex < cellParts.length; cellIndex += 1) {
+        const cellPair = replacementPair(cellParts, cellIndex)
+        const cellPart = cellParts[cellIndex]
+        if (cellPair || cellPart.kind !== 'same') {
+          const editId = nextId()
+          const removed = cellPair ? cellPair.left : cellPart.kind === 'removed' ? cellPart.left : null
+          const added = cellPair ? cellPair.right : cellPart.kind === 'added' ? cellPart.right : null
+          if (removed) {
+            cells.push({
+              header: removed.header,
+              mark: 'removed',
+              editId,
+              attrs: removed.attrs,
+              children: inlineFromAtoms(flatten(removed.nodes), 'removed', editId),
+            })
           }
+          if (added) {
+            cells.push({
+              header: added.header,
+              mark: 'added',
+              editId,
+              attrs: added.attrs,
+              children: inlineFromAtoms(flatten(added.nodes), 'added', editId),
+            })
+          }
+          if (cellPair) cellIndex += 1
+          continue
         }
-        return {
-          cells: align(part.left.cells, part.right.cells, (cell) => (cell.header ? 'th' : 'td')).map((cellPart) => {
-            if (cellPart.kind === 'removed') {
-              return {
-                header: cellPart.left.header,
-                mark: 'removed' as const,
-                children: inlineFromAtoms(flatten(cellPart.left.nodes), 'removed'),
-              }
-            }
-            if (cellPart.kind === 'added') {
-              return {
-                header: cellPart.right.header,
-                mark: 'added' as const,
-                children: inlineFromAtoms(flatten(cellPart.right.nodes), 'added'),
-              }
-            }
-            return {
-              header: cellPart.right.header,
-              mark: 'same' as const,
-              children: diffInline(cellPart.left.nodes, cellPart.right.nodes),
-            }
-          }),
-        }
-      }),
+        cells.push({
+          header: cellPart.right.header,
+          mark: 'same',
+          attrs: cellPart.right.attrs,
+          children: diffInline(cellPart.left.nodes, cellPart.right.nodes, nextId),
+        })
+      }
+      rows.push({ attrs: part.right.attrs, cells })
     }
+    return { type: 'table', mark: 'same', attrs: proposed.attrs, rows }
   }
   return renderSource(proposed, 'same')
 }
 
-function diffSources(original: Source[], proposed: Source[]): BlockNode[] {
-  return align(original, proposed, sourceKey).map((part) => {
-    if (part.kind === 'removed') return renderSource(part.left, 'removed')
-    if (part.kind === 'added') return renderSource(part.right, 'added')
-    return mergeSource(part.left, part.right)
-  })
+function diffSources(original: Source[], proposed: Source[], nextId: () => string): BlockNode[] {
+  const parts = align(original, proposed, sourceKey)
+  const blocks: BlockNode[] = []
+  for (let index = 0; index < parts.length; index += 1) {
+    const pair = replacementPair(parts, index)
+    const part = parts[index]
+    if (part.kind === 'same') {
+      blocks.push(mergeSource(part.left, part.right, nextId))
+      continue
+    }
+    if (pair) {
+      const editId = nextId()
+      blocks.push(renderSource(pair.left, 'removed', editId))
+      blocks.push(renderSource(pair.right, 'added', editId))
+      index += 1
+      continue
+    }
+    const editId = nextId()
+    blocks.push(part.kind === 'removed' ? renderSource(part.left, 'removed', editId) : renderSource(part.right, 'added', editId))
+  }
+  return blocks
 }
 
 export function suggestionHasContent(blocks: BlockNode[]): boolean {
@@ -541,8 +696,271 @@ function documentBlocks(html: string): BlockNode[] {
 /** Display structure only. The original and proposed strings are not rewritten. */
 export function compareSuggestions(original: string, proposed: string): SuggestionViews {
   return {
-    changes: diffSources(blocksFrom(parseNodes(original)), blocksFrom(parseNodes(proposed))),
+    changes: diffSources(blocksFrom(parseNodes(original)), blocksFrom(parseNodes(proposed)), createEditIds()),
     original: documentBlocks(original),
     proposed: documentBlocks(proposed),
   }
+}
+
+function decisionKeeps(mark: DiffMark, editId: string | undefined, decisions: Record<string, EditDecision>, showPending: boolean): boolean {
+  if (mark === 'same') return true
+  const decision = editId ? decisions[editId] : undefined
+  if (!decision) return showPending || mark === 'added'
+  return decision === 'pass' ? mark === 'removed' : mark === 'added'
+}
+
+function filterInline(nodes: InlineNode[], decisions: Record<string, EditDecision>, showPending: boolean): InlineNode[] {
+  const filtered: InlineNode[] = []
+  for (const node of nodes) {
+    if (node.type === 'link' || node.type === 'format') {
+      const children = filterInline(node.children, decisions, showPending)
+      if (children.length) filtered.push({ ...node, children })
+      continue
+    }
+    if (!decisionKeeps(node.mark, node.editId, decisions, showPending)) continue
+    const chosen = Boolean(node.editId && decisions[node.editId])
+    filtered.push(showPending && chosen ? { ...node, mark: 'same' } : node)
+  }
+  return filtered
+}
+
+/** Chosen wording for display. Pending edits keep both marks. Decisions do not change the stored diff. */
+export function presentDecisions(blocks: BlockNode[], decisions: Record<string, EditDecision>): BlockNode[] {
+  const presented: BlockNode[] = []
+  for (const block of blocks) {
+    if (!decisionKeeps(block.mark, block.editId, decisions, true)) continue
+    if (block.type === 'rule') {
+      presented.push(block.editId && decisions[block.editId] ? { ...block, mark: 'same' } : block)
+      continue
+    }
+    if (block.type === 'block') {
+      const children = filterInline(block.children, decisions, true)
+      if (children.length) presented.push({ ...block, children })
+      continue
+    }
+    if (block.type === 'list') {
+      const items = block.items.flatMap((item) => {
+        if (!decisionKeeps(item.mark, item.editId, decisions, true)) return []
+        const children = filterInline(item.children, decisions, true)
+        const nested = presentDecisions(item.blocks, decisions)
+        return children.length || nested.length ? [{ ...item, children, blocks: nested }] : []
+      })
+      if (items.length) presented.push({ ...block, items })
+      continue
+    }
+    const rows = block.rows.flatMap((row) => {
+      const rowMark = row.cells.every((cell) => cell.mark === 'removed')
+        ? 'removed'
+        : row.cells.every((cell) => cell.mark === 'added')
+          ? 'added'
+          : 'same'
+      if (row.editId && !decisionKeeps(rowMark, row.editId, decisions, true)) return []
+      const cells = row.cells.flatMap((cell) => {
+        if (!decisionKeeps(cell.mark, cell.editId, decisions, true)) return []
+        const children = filterInline(cell.children, decisions, true)
+        return children.length ? [{ ...cell, children }] : []
+      })
+      return cells.length ? [{ ...row, cells }] : []
+    })
+    if (rows.length) presented.push({ ...block, rows })
+  }
+  return presented
+}
+
+function escapeText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function escapeAttr(value: string): string {
+  return escapeText(value).replace(/"/g, '&quot;')
+}
+
+function markupAttrs(attrs: Record<string, string> | undefined, names: string[]): string {
+  if (!attrs) return ''
+  return names
+    .filter((name) => attrs[name])
+    .map((name) => ` ${name}="${escapeAttr(attrs[name])}"`)
+    .join('')
+}
+
+function inlineHtml(nodes: InlineNode[], decisions: Record<string, EditDecision>): string {
+  let html = ''
+  for (const node of nodes) {
+    if (node.type === 'link' || node.type === 'format') {
+      const children = inlineHtml(node.children, decisions)
+      if (!children) continue
+      if (node.type === 'link') {
+        const title = node.title ? ` title="${escapeAttr(node.title)}"` : ''
+        html += `<a href="${escapeAttr(node.href)}"${title}>${children}</a>`
+      } else {
+        html += `<${node.tag}${markupAttrs(node.attrs, ['style'])}>${children}</${node.tag}>`
+      }
+      continue
+    }
+    if (!decisionKeeps(node.mark, node.editId, decisions, false)) continue
+    if (node.type === 'break') html += '<br>'
+    else if (node.type === 'image') {
+      if (node.src) html += `<img src="${escapeAttr(node.src)}" alt="${escapeAttr(node.alt)}">`
+      else html += escapeText(node.alt || 'Image')
+    } else html += escapeText(node.text)
+  }
+  return html
+}
+
+function blocksToHtml(blocks: BlockNode[], decisions: Record<string, EditDecision>): string {
+  let html = ''
+  for (const block of blocks) {
+    if (!decisionKeeps(block.mark, block.editId, decisions, false)) continue
+    if (block.type === 'rule') {
+      html += '<hr>'
+      continue
+    }
+    if (block.type === 'block') {
+      const children = inlineHtml(block.children, decisions)
+      if (!children) continue
+      const tag = ['p', 'div', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(block.tag) ? block.tag : 'p'
+      html += `<${tag}${markupAttrs(block.attrs, ['style'])}>${children}</${tag}>`
+      continue
+    }
+    if (block.type === 'list') {
+      const items = block.items
+        .filter((item) => decisionKeeps(item.mark, item.editId, decisions, false))
+        .map((item) => {
+          const children = `${inlineHtml(item.children, decisions)}${blocksToHtml(item.blocks, decisions)}`
+          return children ? `<li${markupAttrs(item.attrs, ['style'])}>${children}</li>` : ''
+        })
+        .join('')
+      if (items) html += `<${block.ordered ? 'ol' : 'ul'}${markupAttrs(block.attrs, ['style'])}>${items}</${block.ordered ? 'ol' : 'ul'}>`
+      continue
+    }
+    const rows = block.rows
+      .map((row) => {
+        const rowMark = row.cells.some((cell) => cell.mark === 'removed')
+          ? 'removed'
+          : row.cells.some((cell) => cell.mark === 'added')
+            ? 'added'
+            : 'same'
+        if (row.editId && !decisionKeeps(rowMark, row.editId, decisions, false)) return ''
+        const cells = row.cells
+          .filter((cell) => decisionKeeps(cell.mark, cell.editId, decisions, false))
+          .map((cell) => {
+            const children = inlineHtml(cell.children, decisions)
+            if (!children) return ''
+            const tag = cell.header ? 'th' : 'td'
+            return `<${tag}${markupAttrs(cell.attrs, ['colspan', 'rowspan', 'style', 'headers', 'scope', 'id'])}>${children}</${tag}>`
+          })
+          .join('')
+        return cells ? `<tr${markupAttrs(row.attrs, ['style'])}>${cells}</tr>` : ''
+      })
+      .join('')
+    if (rows) html += `<table${markupAttrs(block.attrs, ['style', 'role'])}><tbody>${rows}</tbody></table>`
+  }
+  return html
+}
+
+function inlineText(nodes: InlineNode[], decisions: Record<string, EditDecision>): string {
+  let text = ''
+  for (const node of nodes) {
+    if (node.type === 'link' || node.type === 'format') {
+      text += inlineText(node.children, decisions)
+      continue
+    }
+    if (!decisionKeeps(node.mark, node.editId, decisions, false)) continue
+    if (node.type === 'text') text += node.text
+    else if (node.type === 'break') text += '\n'
+    else text += node.alt || 'Image'
+  }
+  return text
+}
+
+function blocksToText(blocks: BlockNode[], decisions: Record<string, EditDecision>): string {
+  const parts: string[] = []
+  for (const block of blocks) {
+    if (!decisionKeeps(block.mark, block.editId, decisions, false)) continue
+    if (block.type === 'rule') continue
+    if (block.type === 'block') {
+      const text = inlineText(block.children, decisions).trim()
+      if (text) parts.push(text)
+      continue
+    }
+    if (block.type === 'list') {
+      for (const item of block.items) {
+        if (!decisionKeeps(item.mark, item.editId, decisions, false)) continue
+        const text = `${inlineText(item.children, decisions)} ${blocksToText(item.blocks, decisions)}`.trim()
+        if (text) parts.push(text)
+      }
+      continue
+    }
+    for (const row of block.rows) {
+      const cells = row.cells
+        .filter((cell) => decisionKeeps(cell.mark, cell.editId, decisions, false))
+        .map((cell) => inlineText(cell.children, decisions).trim())
+        .filter(Boolean)
+      if (cells.length) parts.push(cells.join(' '))
+    }
+  }
+  return parts.join('\n')
+}
+
+function recordEdit(edits: Map<string, { removed: string; added: string }>, order: string[], id: string | undefined, mark: DiffMark, text: string) {
+  if (!id || mark === 'same') return
+  if (!edits.has(id)) {
+    edits.set(id, { removed: '', added: '' })
+    order.push(id)
+  }
+  edits.get(id)![mark] += text
+}
+
+function collectInline(nodes: InlineNode[], edits: Map<string, { removed: string; added: string }>, order: string[]) {
+  for (const node of nodes) {
+    if (node.type === 'link' || node.type === 'format') {
+      collectInline(node.children, edits, order)
+      continue
+    }
+    const text = node.type === 'text' ? node.text : node.type === 'break' ? '\n' : node.alt || 'Image'
+    recordEdit(edits, order, node.editId, node.mark, text)
+  }
+}
+
+export function listEdits(blocks: BlockNode[]): SuggestionEdit[] {
+  const edits = new Map<string, { removed: string; added: string }>()
+  const order: string[] = []
+  const walk = (list: BlockNode[]) => {
+    for (const block of list) {
+      if (block.type === 'rule') {
+        recordEdit(edits, order, block.editId, block.mark, 'line')
+        continue
+      }
+      if (block.type === 'block') collectInline(block.children, edits, order)
+      else if (block.type === 'list') {
+        for (const item of block.items) {
+          collectInline(item.children, edits, order)
+          walk(item.blocks)
+        }
+      } else {
+        for (const row of block.rows) for (const cell of row.cells) collectInline(cell.children, edits, order)
+      }
+    }
+  }
+  walk(blocks)
+  return order.map((id) => {
+    const edit = edits.get(id)!
+    return { id, removed: edit.removed.replace(/\s+/g, ' ').trim(), added: edit.added.replace(/\s+/g, ' ').trim() }
+  })
+}
+
+/**
+ * Wording that Apply should save. With no passed edits this is the proposed source, unchanged.
+ * Passed edits keep the original wording. The result is sanitized and contains no diff marks.
+ */
+export function resolvedField(
+  original: string,
+  proposed: string,
+  decisions: Record<string, EditDecision>,
+  plain = false,
+): string {
+  if (!Object.values(decisions).some((decision) => decision === 'pass')) return proposed
+  const blocks = compareSuggestions(original, proposed).changes
+  if (plain) return blocksToText(blocks, decisions).trim()
+  return sanitizeRichHtml(blocksToHtml(blocks, decisions))
 }
