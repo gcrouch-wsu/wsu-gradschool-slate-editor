@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   serverExternalPackages: ['pg'],
+  outputFileTracingIncludes: {
+    '/api/newsletters/[id]/ai': ['./style.md'],
+  },
   turbopack: {
     root: __dirname,
   },

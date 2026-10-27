@@ -5,19 +5,37 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import EditorPanel from '@/components/EditorPanel'
 import PreviewPanel from '@/components/PreviewPanel'
+import AiAssistDialog from '@/components/AiAssistDialog'
 import ConfirmModal from '@/components/ConfirmModal'
 import { useNewsletterState } from '@/app/hooks/useNewsletterState'
 import { usePreview } from '@/app/hooks/usePreview'
+import type { AiAction } from '@/lib/ai/instructions'
+import {
+  applyFieldChange,
+  proposalIsCurrent,
+  sectionIndexOf,
+  targetForCard,
+  type AiTarget,
+  type ProposalBase,
+  type ReviewFinding,
+  type TextSuggestion,
+} from '@/lib/ai/proposals'
+import { canonicalJson } from '@/lib/canonical-json'
+import { baselineAfterSave, differsFromSent } from '@/lib/sent-baseline'
 import { beginLeaseRequest, clearTabLease, currentLeaseToken, rememberLease } from '@/lib/client/tab-lease'
 import { SerializedSaver, type SaveResponse, type SaveStatus } from '@/lib/client/save-queue'
 import { errorMessage, jsonBody, RequestError, requestJson } from '@/lib/client/request'
-import type { NewsletterData, ValidationIssue, ValidationResult } from '@/types/newsletter'
+import type { NewsletterData, NewsletterProgress, ValidationIssue, ValidationResult } from '@/types/newsletter'
 
 interface Props {
   newsletterId: string
   userId: string
   initialContent: NewsletterData
   initialVersion: number
+  initialProgress: NewsletterProgress
+  initialChangedSinceSent: boolean
+  initialSentMarkId: string | null
+  initialSentCanonical?: string | null
 }
 type Banner =
   | 'connecting'
@@ -32,13 +50,34 @@ interface Lease {
   token: string
   saveVersion: number
   content: NewsletterData
+  sentCanonical?: string | null
+  summary?: {
+    progress: NewsletterProgress
+    changedSinceSent: boolean
+    sentMarkId: string | null
+  }
 }
 const button =
   'inline-flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wsu-crimson disabled:opacity-50 disabled:cursor-not-allowed'
 const secondary = `${button} bg-white border-wsu-crimson text-wsu-crimson hover:bg-wsu-bg-light`
 const primary = `${button} bg-wsu-crimson border-wsu-crimson text-white hover:bg-wsu-crimson-dark`
 
-export default function SharedNewsletterEditor({ newsletterId, userId, initialContent, initialVersion }: Props) {
+const progressLabels: Record<NewsletterProgress, string> = {
+  draft: 'Draft',
+  ready: 'Ready for Slate',
+  sent: 'Sent via Slate',
+}
+
+export default function SharedNewsletterEditor({
+  newsletterId,
+  userId,
+  initialContent,
+  initialVersion,
+  initialProgress,
+  initialChangedSinceSent,
+  initialSentMarkId,
+  initialSentCanonical = null,
+}: Props) {
   const router = useRouter()
   const [document, setDocument] = useState(initialContent)
   const { state, updateState, undo, redo, canUndo, canRedo, resetState } = useNewsletterState(document, false)
@@ -51,6 +90,36 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
   const [busy, setBusy] = useState<string | null>(null)
   const operationRef = useRef(false)
   const [leavePrompt, setLeavePrompt] = useState(false)
+  const [progress, setProgress] = useState<NewsletterProgress>(initialProgress)
+  const [changedSinceSent, setChangedSinceSent] = useState(initialChangedSinceSent)
+  const [hasSentRecord, setHasSentRecord] = useState(Boolean(initialSentMarkId))
+  const pendingProgress = useRef<{
+    progress: NewsletterProgress
+    token: string
+    expectedVersion: number
+  } | null>(null)
+  const [progressPending, setProgressPending] = useState(false)
+  const [sentPrompt, setSentPrompt] = useState(false)
+  const sentBaseline = useRef<string | null>(
+    initialSentCanonical ?? (initialChangedSinceSent ? null : canonicalJson(initialContent)),
+  )
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiTitle, setAiTitle] = useState('AI assistance')
+  const [aiActions, setAiActions] = useState<{ id: AiAction; label: string }[]>([])
+  const [aiAction, setAiAction] = useState<AiAction>('edit')
+  const [aiInstruction, setAiInstruction] = useState('')
+  const [aiHouseStyle, setAiHouseStyle] = useState(false)
+  const [aiShowHouse, setAiShowHouse] = useState(false)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState('')
+  const [aiGuide, setAiGuide] = useState('')
+  const [aiModel, setAiModel] = useState('')
+  const [aiSuggestions, setAiSuggestions] = useState<TextSuggestion[]>([])
+  const [aiFindings, setAiFindings] = useState<ReviewFinding[]>([])
+  const [aiOriginal, setAiOriginal] = useState('')
+  const aiRequest = useRef<AbortController | null>(null)
+  const aiTarget = useRef<AiTarget | null>(null)
+  const aiBase = useRef<ProposalBase | null>(null)
   const [recovery, setRecovery] = useState<NewsletterData | null>(null)
   const [staleRecovery, setStaleRecovery] = useState(false)
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null)
@@ -74,6 +143,11 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
   useEffect(() => {
     void updatePreview(state)
   }, [state, updatePreview])
+  useEffect(() => {
+    if (!hasSentRecord || sentBaseline.current === null) return
+    setChangedSinceSent(canonicalJson(state) !== sentBaseline.current)
+  }, [hasSentRecord, state])
+  useEffect(() => () => aiRequest.current?.abort(), [])
 
   const backup = useCallback(
     (snapshot: NewsletterData, baseVersion: number) => {
@@ -144,6 +218,16 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
         if (!response.ok || !Number.isInteger(body?.saveVersion) || !Number.isInteger(body?.currentVersion))
           return { ok: false, code: 'network' }
         versionRef.current = body.saveVersion
+        if (typeof body.changedSinceSent === 'boolean') {
+          sentBaseline.current = baselineAfterSave(
+            sentBaseline.current,
+            canonicalJson(request.snapshot),
+            body.changedSinceSent,
+          )
+          setChangedSinceSent(
+            differsFromSent(sentBaseline.current, canonicalJson(stateRef.current), body.changedSinceSent),
+          )
+        }
         if (JSON.stringify(stateRef.current) === JSON.stringify(request.snapshot)) {
           try {
             localStorage.removeItem(backupKey)
@@ -183,6 +267,18 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
       setCanWrite(true)
       setBanner('idle')
       setStatus('saved')
+      if (lease.summary) {
+        setProgress(lease.summary.progress)
+        setHasSentRecord(Boolean(lease.summary.sentMarkId))
+        sentBaseline.current = lease.sentCanonical
+          ? lease.sentCanonical
+          : baselineAfterSave(sentBaseline.current, canonicalJson(lease.content), lease.summary.changedSinceSent)
+        setChangedSinceSent(
+          differsFromSent(sentBaseline.current, canonicalJson(lease.content), lease.summary.changedSinceSent),
+        )
+      }
+      pendingProgress.current = null
+      setProgressPending(false)
       setError('')
       readRecovery(lease.saveVersion)
     },
@@ -238,7 +334,7 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
   }, [state, canWrite, noteSnapshot])
   const onEdit = useCallback(
     (updater: (prev: NewsletterData) => NewsletterData, pushHistory = true) => {
-      if (!canWrite || operationRef.current) return
+      if (!canWrite || operationRef.current || pendingProgress.current) return
       const next = updater(stateRef.current)
       stateRef.current = next
       updateState(() => next, pushHistory)
@@ -353,6 +449,10 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
     }
   }
   async function finish(leave = false) {
+    if (pendingProgress.current) {
+      setError('Retry the pending progress update before finishing or leaving this draft.')
+      return
+    }
     await operation('Saving and finishing…', async () => {
       if (canWrite) noteSnapshot(stateRef.current)
       if (!(await flushChanges())) return
@@ -402,6 +502,318 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
       )
     })
   }
+  const closeAi = useCallback(() => {
+    aiRequest.current?.abort()
+    aiRequest.current = null
+    setAiOpen(false)
+    setAiBusy(false)
+    setAiError('')
+    setAiSuggestions([])
+    setAiFindings([])
+    setAiInstruction('')
+    setAiGuide('')
+    setAiModel('')
+    setAiOriginal('')
+    aiTarget.current = null
+    aiBase.current = null
+  }, [])
+  function beginAi(target: AiTarget, title: string, actions: { id: AiAction; label: string }[], showHouse: boolean) {
+    closeAi()
+    aiTarget.current = target
+    setAiTitle(title)
+    setAiActions(actions)
+    setAiAction(actions[0]?.id ?? 'edit')
+    setAiShowHouse(showHouse)
+    setAiHouseStyle(false)
+    setAiOpen(true)
+  }
+  function openCardAssist(sectionIndex: number, cardIndex: number) {
+    const target = targetForCard(stateRef.current, sectionIndex, cardIndex, 'body_html')
+    if (!target) return
+    const card = stateRef.current.sections[sectionIndex]?.cards?.[cardIndex]
+    beginAi(
+      target,
+      `AI assistance for ${target.label}`,
+      [
+        { id: 'edit', label: 'Edit for clarity' },
+        { id: 'shorten', label: 'Shorten' },
+        ...(card && 'title' in card ? [{ id: 'headlines' as const, label: 'Suggest headlines' }] : []),
+      ],
+      card?.content_origin !== 'graduate_school',
+    )
+  }
+  function openPreheaderAssist() {
+    beginAi(
+      {
+        kind: 'preheader',
+        sectionKey: '',
+        cardIndex: null,
+        field: 'preheader',
+        originalText: stateRef.current.masthead.preheader || '',
+        label: 'preheader',
+      },
+      'Preheader suggestions',
+      [{ id: 'preheader', label: 'Suggest preheader' }],
+      false,
+    )
+  }
+  function openReview() {
+    beginAi(
+      {
+        kind: 'review',
+        sectionKey: '',
+        cardIndex: null,
+        field: 'preheader',
+        originalText: stateRef.current.masthead.preheader || '',
+        label: 'newsletter',
+      },
+      'Newsletter review',
+      [{ id: 'review', label: 'Review newsletter' }],
+      false,
+    )
+  }
+  async function generateSuggestion() {
+    const selected = aiTarget.current
+    if (!selected || aiRequest.current || progressPending || operationRef.current) return
+    const controller = new AbortController()
+    aiRequest.current = controller
+    setAiBusy(true)
+    setAiError('')
+    setAiSuggestions([])
+    setAiFindings([])
+    setAiGuide('')
+    aiBase.current = null
+    try {
+      if (!(await flushChanges())) {
+        setAiError('Save the draft before preparing a suggestion.')
+        return
+      }
+      if (controller.signal.aborted) return
+      const token = currentLeaseToken(newsletterId)
+      if (!token || !canWrite) {
+        setAiError('Editing authority is required before preparing a suggestion.')
+        return
+      }
+      let target =
+        selected.kind === 'card'
+          ? selected
+          : {
+              ...selected,
+              originalText: stateRef.current.masthead.preheader || '',
+            }
+      if (selected.kind === 'card' && (aiAction === 'edit' || aiAction === 'shorten' || aiAction === 'headlines')) {
+        const sectionIndex = sectionIndexOf(stateRef.current, selected)
+        const refreshed = targetForCard(
+          stateRef.current,
+          sectionIndex,
+          selected.cardIndex ?? 0,
+          aiAction === 'headlines' ? 'title' : 'body_html',
+        )
+        if (!refreshed) {
+          setAiError('The selected story is no longer in the same place. Generate it again.')
+          return
+        }
+        target = refreshed
+        aiTarget.current = refreshed
+      }
+      const capturedVersion = versionRef.current
+      const capturedDocument = structuredClone(stateRef.current)
+      setAiOriginal(target.originalText)
+      const result = await requestJson<{
+        guideVersion: string
+        model: string
+        suggestion: TextSuggestion | TextSuggestion[] | ReviewFinding[]
+        base: ProposalBase
+      }>(`/api/newsletters/${newsletterId}/ai`, {
+        ...jsonBody({
+          action: aiAction,
+          token,
+          expectedVersion: capturedVersion,
+          instruction: aiInstruction,
+          applyHouseStyle: aiHouseStyle,
+          target,
+        }),
+        signal: controller.signal,
+      })
+      if (aiRequest.current !== controller || controller.signal.aborted) return
+      if (result.base.newsletterId !== newsletterId || result.base.saveVersion !== capturedVersion) {
+        setAiError('The server returned a suggestion for a different saved version. Generate it again.')
+        return
+      }
+      if (
+        capturedVersion !== versionRef.current ||
+        canonicalJson(capturedDocument) !== canonicalJson(stateRef.current)
+      ) {
+        setAiError('This suggestion is out of date because the draft changed. Generate it again.')
+        return
+      }
+      aiBase.current = {
+        ...result.base,
+        document: capturedDocument,
+        saveVersion: capturedVersion,
+        target,
+      }
+      setAiGuide(result.guideVersion)
+      setAiModel(result.model)
+      if (aiAction === 'review') {
+        setAiFindings(result.suggestion as ReviewFinding[])
+        setAiSuggestions([])
+      } else {
+        const suggestion = result.suggestion as TextSuggestion | TextSuggestion[]
+        setAiSuggestions(Array.isArray(suggestion) ? suggestion : [suggestion])
+        setAiFindings([])
+      }
+    } catch (failure) {
+      if (!controller.signal.aborted && aiRequest.current === controller) setAiError(errorMessage(failure))
+    } finally {
+      if (aiRequest.current === controller) {
+        aiRequest.current = null
+        setAiBusy(false)
+      }
+    }
+  }
+  async function applySuggestion(suggestion: TextSuggestion) {
+    const base = aiBase.current
+    if (!base) return
+    const check = proposalIsCurrent({
+      base,
+      newsletterId,
+      saveVersion: versionRef.current,
+      canWrite,
+      document: stateRef.current,
+    })
+    if (!check.ok) {
+      setAiError(check.message)
+      return
+    }
+    if (!(await validateAiApplication(base))) return
+    onEdit((prev) => applyFieldChange(prev, base.target, suggestion.proposed))
+    closeAi()
+  }
+  async function applyFinding(finding: ReviewFinding) {
+    const base = aiBase.current
+    if (!base || !finding.proposed) return
+    const target: AiTarget = {
+      kind: finding.field === 'preheader' ? 'preheader' : 'card',
+      sectionKey: finding.sectionKey,
+      sectionIndex: finding.sectionIndex,
+      cardIndex: finding.cardIndex,
+      field: finding.field,
+      originalText: finding.originalText,
+      label: finding.cardTitle,
+    }
+    const check = proposalIsCurrent({
+      base: { ...base, target },
+      newsletterId,
+      saveVersion: versionRef.current,
+      canWrite,
+      document: stateRef.current,
+      replacementOriginal: finding.originalText,
+    })
+    if (!check.ok) {
+      setAiError(check.message)
+      return
+    }
+    if (!(await validateAiApplication({ ...base, target }))) return
+    onEdit((prev) => applyFieldChange(prev, target, finding.proposed || ''))
+    closeAi()
+  }
+  async function validateAiApplication(base: ProposalBase): Promise<boolean> {
+    if (aiRequest.current || operationRef.current || pendingProgress.current) return false
+    const controller = new AbortController()
+    aiRequest.current = controller
+    setAiBusy(true)
+    try {
+      const token = currentLeaseToken(newsletterId)
+      if (!token) throw new Error('Editing authority changed. Generate the suggestion again after taking over.')
+      const lease = await requestJson<Lease>(`/api/newsletters/${newsletterId}/lease`, {
+        ...jsonBody({ action: 'resume', token }),
+        signal: controller.signal,
+      })
+      if (controller.signal.aborted || aiRequest.current !== controller) return false
+      if (operationRef.current || pendingProgress.current)
+        throw new Error('The draft changed while checking editing authority. Generate the suggestion again.')
+      const check = proposalIsCurrent({
+        base,
+        newsletterId,
+        saveVersion: lease.saveVersion,
+        canWrite: true,
+        document: stateRef.current,
+      })
+      if (!check.ok) throw new Error(check.message)
+      return true
+    } catch (failure) {
+      if (!controller.signal.aborted && aiRequest.current === controller) {
+        setAiError(errorMessage(failure))
+        if (failure instanceof RequestError && (failure.status === 409 || failure.status === 401)) {
+          setCanWrite(false)
+          setBanner(failure.status === 401 ? 'session_expired' : 'lease_lost')
+        }
+      }
+      return false
+    } finally {
+      if (aiRequest.current === controller) {
+        aiRequest.current = null
+        setAiBusy(false)
+      }
+    }
+  }
+  async function changeProgress(next: NewsletterProgress) {
+    await operation(next === 'sent' ? 'Recording sent version…' : 'Updating progress…', async () => {
+      if (!pendingProgress.current) {
+        if (!(await flushChanges())) return
+        const token = currentLeaseToken(newsletterId)
+        if (!token) throw new Error('Editing authority is required.')
+        pendingProgress.current = {
+          progress: next,
+          token,
+          expectedVersion: versionRef.current,
+        }
+        setProgressPending(true)
+      }
+      if (pendingProgress.current.progress !== next) throw new Error('Retry the pending progress update first.')
+      const result = await requestJson<{
+        saveVersion: number
+        currentVersion: number
+        progress: NewsletterProgress
+        summary: NonNullable<Lease['summary']>
+      }>(`/api/newsletters/${newsletterId}/progress`, jsonBody(pendingProgress.current)).catch((failure) => {
+        if (failure instanceof RequestError && (failure.status === 409 || failure.status === 401)) {
+          pendingProgress.current = null
+          setProgressPending(false)
+          setCanWrite(false)
+          setBanner(failure.status === 401 ? 'session_expired' : 'conflict')
+        }
+        throw failure
+      })
+      if (result.currentVersion !== result.saveVersion) {
+        setCanWrite(false)
+        setBanner('conflict')
+        pendingProgress.current = null
+        setProgressPending(false)
+        throw new Error('The draft changed after the progress update. Reopen it before editing.')
+      }
+      versionRef.current = result.saveVersion
+      if (saverRef.current) saverRef.current.version = result.saveVersion
+      setProgress(result.progress)
+      setHasSentRecord(Boolean(result.summary.sentMarkId))
+      sentBaseline.current = baselineAfterSave(
+        sentBaseline.current,
+        canonicalJson(stateRef.current),
+        result.summary.changedSinceSent,
+      )
+      setChangedSinceSent(
+        differsFromSent(sentBaseline.current, canonicalJson(stateRef.current), result.summary.changedSinceSent),
+      )
+      pendingProgress.current = null
+      setProgressPending(false)
+      setNotice(
+        result.progress === 'sent'
+          ? 'The current saved version was recorded as sent via Slate. Exporting does not send the email.'
+          : 'Progress updated.',
+      )
+    })
+  }
   const statusLabel =
     banner === 'connecting'
       ? 'Checking editing access…'
@@ -436,18 +848,67 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
             All newsletters
           </Link>
           <h1 className="text-xl font-semibold break-words">{state.masthead.title || 'Newsletter'}</h1>
+          <p className="text-sm">
+            <span className="font-semibold">{progressLabels[progress]}</span>
+            {state.issue?.title ? ` · ${state.issue.title}` : ''}
+            {changedSinceSent ? ' · Changed since sent' : ''}
+          </p>
+          {hasSentRecord && (
+            <p className="text-sm">
+              <Link className="font-semibold text-wsu-crimson underline" href={`/newsletters/${newsletterId}/sent`}>
+                Open sent version
+              </Link>
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              className={secondary}
+              type="button"
+              disabled={!canWrite || busy !== null}
+              onClick={() => void changeProgress('ready')}
+            >
+              Mark ready for Slate
+            </button>
+            <button
+              className={secondary}
+              type="button"
+              disabled={!canWrite || busy !== null}
+              onClick={() => void changeProgress('draft')}
+            >
+              Return to draft
+            </button>
+            <button
+              className={secondary}
+              type="button"
+              disabled={!canWrite || busy !== null}
+              onClick={() => setSentPrompt(true)}
+            >
+              Mark as sent via Slate
+            </button>
+          </div>
           <p className="text-sm text-wsu-text-muted">
-            Changes save automatically. Finish editing to make this draft available to the next person.
+            Changes save automatically. Finish editing to make this draft available to the next person. Ready for Slate
+            is a review choice, not a completed check. Copying or exporting HTML does not mark this as sent.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0 lg:max-w-xl">
           <span role="status" aria-live="polite" data-testid="save-status" className="w-full text-sm font-medium">
             {statusLabel}
           </span>
-          <button className={secondary} type="button" onClick={undo} disabled={!canUndo || !canWrite || busy !== null}>
+          <button
+            className={secondary}
+            type="button"
+            onClick={undo}
+            disabled={!canUndo || !canWrite || busy !== null || progressPending}
+          >
             Undo
           </button>
-          <button className={secondary} type="button" onClick={redo} disabled={!canRedo || !canWrite || busy !== null}>
+          <button
+            className={secondary}
+            type="button"
+            onClick={redo}
+            disabled={!canRedo || !canWrite || busy !== null || progressPending}
+          >
             Redo
           </button>
           {!canWrite && banner !== 'connecting' && banner !== 'deleted' && banner !== 'session_expired' && (
@@ -493,6 +954,20 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
         </div>
       </header>
       <div className="px-4 space-y-2">
+        {progressPending && !busy && (
+          <div role="alert" className="py-2">
+            Progress confirmation is pending. Retry before making further edits.
+            <button
+              type="button"
+              className={secondary}
+              onClick={() => {
+                if (pendingProgress.current) void changeProgress(pendingProgress.current.progress)
+              }}
+            >
+              Retry progress update
+            </button>
+          </div>
+        )}
         {busy && (
           <p role="status" className="py-2">
             {busy}
@@ -587,7 +1062,10 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
             state={state}
             updateState={onEdit}
             templateType={state.template}
-            readOnly={!canWrite || busy !== null}
+            readOnly={!canWrite || busy !== null || progressPending}
+            onAssist={openCardAssist}
+            onSuggestPreheader={openPreheaderAssist}
+            onReview={openReview}
           />
         </div>
         <div className={`min-w-0 ${mobileView === 'preview' ? '' : 'hidden lg:block'}`}>
@@ -605,6 +1083,60 @@ export default function SharedNewsletterEditor({ newsletterId, userId, initialCo
           router.push('/newsletters')
         }}
         onCancel={() => setLeavePrompt(false)}
+      />
+      <ConfirmModal
+        isOpen={sentPrompt}
+        title="Mark as sent via Slate?"
+        message="This records the current saved version, who marked it, and when. It does not send email or contact Slate. Later edits stay in the draft and are labeled Changed since sent."
+        confirmLabel="Mark as sent via Slate"
+        cancelLabel="Keep current progress"
+        onConfirm={() => {
+          setSentPrompt(false)
+          void changeProgress('sent')
+        }}
+        onCancel={() => setSentPrompt(false)}
+      />
+      <AiAssistDialog
+        open={aiOpen}
+        title={aiTitle}
+        actions={aiActions}
+        action={aiAction}
+        instruction={aiInstruction}
+        applyHouseStyle={aiHouseStyle}
+        showHouseStyle={aiShowHouse}
+        busy={aiBusy}
+        error={aiError}
+        guideVersion={aiGuide}
+        model={aiModel}
+        suggestions={aiSuggestions}
+        originalText={aiOriginal}
+        findings={aiFindings}
+        onAction={(action) => {
+          setAiAction(action)
+          setAiSuggestions([])
+          setAiFindings([])
+          setAiError('')
+          setAiGuide('')
+          aiBase.current = null
+        }}
+        onInstruction={(value) => {
+          setAiInstruction(value)
+          setAiSuggestions([])
+          setAiFindings([])
+          setAiGuide('')
+          aiBase.current = null
+        }}
+        onHouseStyle={(value) => {
+          setAiHouseStyle(value)
+          setAiSuggestions([])
+          setAiFindings([])
+          setAiGuide('')
+          aiBase.current = null
+        }}
+        onGenerate={() => void generateSuggestion()}
+        onApply={applySuggestion}
+        onApplyFinding={applyFinding}
+        onDiscard={closeAi}
       />
     </div>
   )

@@ -8,11 +8,13 @@ interface MastheadEditorProps {
     updater: (prev: NewsletterData) => NewsletterData,
     pushHistory?: boolean
   ) => void
+  onSuggestPreheader?: () => void
 }
 
 export default function MastheadEditor({
   state,
   updateState,
+  onSuggestPreheader,
 }: MastheadEditorProps) {
   const masthead = state.masthead || {}
 
@@ -121,6 +123,47 @@ export default function MastheadEditor({
       </div>
 
       <div>
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="issue-title">
+          Issue title
+        </label>
+        <input
+          id="issue-title"
+          type="text"
+          value={state.issue?.title || ''}
+          onChange={(event) =>
+            updateState((prev) => ({
+              ...prev,
+              issue: { title: event.target.value, date: prev.issue?.date || '' },
+            }))
+          }
+          placeholder="October 31, 2026"
+          className="w-full min-h-11 px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+        />
+        <p className="mt-1 text-xs text-wsu-text-muted">
+          This names the issue in the library. It is separate from the email heading and is not guessed for older drafts.
+        </p>
+      </div>
+
+      <div>
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="issue-date">
+          Issue date
+        </label>
+        <input
+          id="issue-date"
+          type="text"
+          value={state.issue?.date || ''}
+          onChange={(event) =>
+            updateState((prev) => ({
+              ...prev,
+              issue: { title: prev.issue?.title || '', date: event.target.value },
+            }))
+          }
+          placeholder="October 31, 2026"
+          className="w-full min-h-11 px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+        />
+      </div>
+
+      <div>
         <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="newsletter-title">
           Newsletter Title
         </label>
@@ -182,6 +225,15 @@ export default function MastheadEditor({
         <p className="mt-1 text-xs text-wsu-text-muted">
           This text appears in email client previews but is hidden in the email itself.
         </p>
+        {onSuggestPreheader && (
+          <button
+            type="button"
+            className="mt-2 inline-flex min-h-11 items-center rounded-md border-2 border-wsu-crimson px-3 text-sm font-semibold text-wsu-crimson"
+            onClick={onSuggestPreheader}
+          >
+            Suggest preheader
+          </button>
+        )}
       </div>
     </div>
   )

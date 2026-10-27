@@ -33,6 +33,7 @@ interface SectionsEditorProps {
     updater: (prev: NewsletterData) => NewsletterData,
     pushHistory?: boolean
   ) => void
+  onAssist?: (sectionIndex: number, cardIndex: number) => void
 }
 
 function ReorderButtons({
@@ -156,6 +157,7 @@ function SortableCardItem({
   onMove,
   onEdit,
   onRemove,
+  onAssist,
 }: {
   card: Card
   cardIndex: number
@@ -164,6 +166,7 @@ function SortableCardItem({
   onMove: (sectionIndex: number, cardIndex: number, direction: -1 | 1) => void
   onEdit: (sectionIndex: number, cardIndex: number) => void
   onRemove: (sectionIndex: number, cardIndex: number) => void
+  onAssist?: (sectionIndex: number, cardIndex: number) => void
 }) {
   const label = ('title' in card && card.title?.trim()) || `card ${cardIndex + 1}`
   const {
@@ -227,6 +230,19 @@ function SortableCardItem({
         >
           <Edit2 className="w-4 h-4" />
         </button>
+        {onAssist && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onAssist(sectionIndex, cardIndex)
+            }}
+            className="inline-flex min-h-11 items-center px-2 text-sm font-semibold text-wsu-crimson hover:text-wsu-crimson-dark"
+            aria-label={`AI assistance for ${label}`}
+          >
+            AI assistance
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) => {
@@ -344,6 +360,7 @@ function SortableClosureItem({
 export default function SectionsEditor({
   state,
   updateState,
+  onAssist,
 }: SectionsEditorProps) {
   const sections = state.sections || []
   const [editingCard, setEditingCard] = useState<{
@@ -1054,6 +1071,7 @@ export default function SectionsEditor({
                                   onMove={moveCard}
                                   onEdit={editCard}
                                   onRemove={removeCard}
+                                  onAssist={onAssist}
                                 />
                               )
                             })}

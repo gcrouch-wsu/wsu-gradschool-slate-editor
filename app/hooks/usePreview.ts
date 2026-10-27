@@ -1,15 +1,24 @@
 // app/editor/hooks/usePreview.ts - Preview generation hook
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import type { NewsletterData, PreviewResponse } from '@/types/newsletter'
-import { debounce } from '@/lib/utils'
 
 export function usePreview(initialHtml = '') {
+  const previewRequest = useRef(0)
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      previewRequest.current++
+      if (previewTimer.current) clearTimeout(previewTimer.current)
+    },
+    [],
+  )
   const [html, setHtml] = useState(initialHtml)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const updatePreview = useCallback(async (data: NewsletterData) => {
+    const current = ++previewRequest.current
     setLoading(true)
     setError(null)
 
@@ -21,6 +30,7 @@ export function usePreview(initialHtml = '') {
       })
 
       const result: PreviewResponse = await response.json()
+      if (current !== previewRequest.current) return
 
       if (result.success && result.html) {
         setHtml(result.html)
@@ -28,18 +38,22 @@ export function usePreview(initialHtml = '') {
         setError(result.error || 'Preview generation failed')
       }
     } catch (err) {
+      if (current !== previewRequest.current) return
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       setError(errorMessage)
     } finally {
-      setLoading(false)
+      if (current === previewRequest.current) setLoading(false)
     }
   }, [])
 
-  const debouncedUpdatePreview = useMemo(
-    () => debounce((data: NewsletterData) => {
-      updatePreview(data)
-    }, 400),
-    [updatePreview]
+  const debouncedUpdatePreview = useCallback(
+    (data: NewsletterData) => {
+      if (previewTimer.current) clearTimeout(previewTimer.current)
+      previewTimer.current = setTimeout(() => {
+        void updatePreview(data)
+      }, 400)
+    },
+    [updatePreview],
   )
 
   return {
@@ -50,4 +64,3 @@ export function usePreview(initialHtml = '') {
     debouncedUpdatePreview,
   }
 }
-

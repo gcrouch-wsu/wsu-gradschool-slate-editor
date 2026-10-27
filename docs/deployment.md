@@ -10,6 +10,7 @@ The current production host is Vercel. Shared newsletters are saved in Postgres 
    - `DATABASE_URL` from the database
    - `SESSION_SECRET` a random string of at least 32 characters
    - `PUBLIC_ORIGIN` the production URL, with no trailing slash, such as `https://your-app.vercel.app`
+   - Optional AI editing: `AI_GATEWAY_API_KEY` and `AI_GATEWAY_MODEL` (a provider/model id from the AI Gateway catalog). `AI_GATEWAY_BASE_URL` is optional and defaults to `https://ai-gateway.vercel.sh/v1`. Do not set a provider key in place of the gateway key. Leave the AI variables unset to keep suggestions unavailable; the editor will not invent text.
 3. From a machine that can reach that database, run `npm run migrate`, then create the first administrator:
 
 ```bash
@@ -46,7 +47,7 @@ Apply migrations as a separate command before starting a new release:
 npm run migrate
 ```
 
-`scripts/migrate.mjs` takes an advisory lock, records each file's SHA-256, and exits non-zero when `DATABASE_URL` is missing, a connection fails, or an already-applied file changes. Checksums normalize CRLF to LF and also accept previously recorded Windows CRLF hashes; no ledger entries are rewritten. Add a new file under `migrations/` instead of editing an applied file. Do not run migrations from a page or API request.
+`scripts/migrate.mjs` takes an advisory lock, records each file's SHA-256, and exits non-zero when `DATABASE_URL` is missing, a connection fails, or an already-applied file changes. Checksums normalize CRLF to LF and also accept previously recorded Windows CRLF hashes; no ledger entries are rewritten. Add a new file under `migrations/` instead of editing an applied file. `004_issue_progress.sql` adds issue dates, progress, sent-version records, duplicate receipts, and AI usage counters. It does not rewrite existing newsletter titles or mark any existing draft as sent. Do not run migrations from a page or API request.
 
 For the current Vercel release, create named accounts with passwords. The password is hashed and is not stored as text:
 
@@ -83,7 +84,7 @@ The `Dockerfile` is preparation for a later container host. The current release 
 
 1. Freeze newsletter writes. Stop the old editor, or make it read-only, before copying data. Do not let the old process and the new process write the same newsletter.
 2. Take a PostgreSQL backup.
-3. Load users, identities, newsletters, revisions, and save receipts. Keep document IDs, actor IDs, save versions, and revision numbers unchanged.
+3. Restore the full application database, including identities, sessions, newsletters, revisions, recovery drafts, save and progress receipts, sent snapshots, duplicate receipts, and audit records. Keep document IDs, actor IDs, save versions, and revision numbers unchanged. Do not transfer only the newsletter rows.
 4. Run `npm run migrate` against the target database. It is safe to repeat; it will not reapply an unchanged file.
 5. Start the new release with Okta mode, the target `DATABASE_URL`, and the registered `PUBLIC_ORIGIN`.
 6. Verify health, one administrator sign-in, one editor sign-in, a save, a second editor's blocked lease, takeover, export, and sign-out.

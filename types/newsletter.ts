@@ -2,6 +2,15 @@
 
 export type TemplateType = 'ff' | 'briefing' | 'letter'
 
+export type ContentOrigin = 'graduate_school' | 'contributed'
+
+export type NewsletterProgress = 'draft' | 'ready' | 'sent'
+
+export interface IssueIdentity {
+  title: string
+  date: string
+}
+
 export type TitleAlign = 'left' | 'center' | 'right'
 
 export interface Padding {
@@ -236,7 +245,9 @@ export interface LetterCard {
   table_header_underline_color?: string
 }
 
-export type Card = StandardCard | EventCard | ResourceCard | CTACard | LetterCard
+export type Card = (StandardCard | EventCard | ResourceCard | CTACard | LetterCard) & {
+  content_origin?: ContentOrigin
+}
 
 export interface Closure {
   date: string
@@ -265,6 +276,7 @@ export interface Footer {
 
 export interface NewsletterData {
   template: TemplateType
+  issue?: IssueIdentity
   masthead: Masthead
   sections: Section[]
   footer: Footer

@@ -6,9 +6,11 @@ HTML newsletter editor for **Friday Focus**, **Graduate School Briefing**, and *
 
 ## What it does
 
+- Shared drafts at `/newsletters`. One person edits a newsletter at a time. Finished HTML is copied into Slate; the editor does not send email.
+- Library filters for template and title, an editable issue title, and progress of Draft, Ready for Slate, or Sent via Slate.
+- Duplicate for next issue, revision history, and optional AI suggestions governed by `style.md`.
 - Rich editing (Tiptap) with preview, import/export HTML, validation, and plain-text generation.
 - Template switching with defaults loaded from API routes (`/api/defaults/...`).
-- Local auto-save / restore flows for in-progress drafts.
 
 ## Requirements
 

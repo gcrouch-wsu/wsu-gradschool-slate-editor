@@ -3,7 +3,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { Card, Link, Shadow } from '@/types/newsletter'
+import type { Card, ContentOrigin, Link, Shadow } from '@/types/newsletter'
 import { Plus, Trash2 } from 'lucide-react'
 import { CTA_BUTTON_DEFAULTS } from '@/lib/config'
 import dynamic from 'next/dynamic'
@@ -134,6 +134,32 @@ export default function CardEditor({
         </div>
 
         <div className="p-6 space-y-4">
+          <div>
+            <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="content-origin">
+              Writing source
+            </label>
+            <select
+              id="content-origin"
+              value={editedCard.content_origin ?? ''}
+              onChange={(event) => {
+                const value = event.target.value as ContentOrigin | ''
+                setEditedCard((prev) => {
+                  const next = { ...prev }
+                  if (!value) delete next.content_origin
+                  else next.content_origin = value
+                  return next
+                })
+              }}
+              className="w-full min-h-11 px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+            >
+              <option value="">Not specified</option>
+              <option value="graduate_school">Graduate School writing</option>
+              <option value="contributed">Contributed writing</option>
+            </select>
+            <p className="mt-1 text-xs text-wsu-text-muted">
+              Contributed writing keeps its voice unless you explicitly apply house style.
+            </p>
+          </div>
           {/* Title - Only show for card types that have a title property */}
           {'title' in editedCard && (
             <div>

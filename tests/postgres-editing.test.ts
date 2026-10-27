@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
 import EmbeddedPostgres from 'embedded-postgres'
-import { afterAll, beforeAll, expect, test } from 'vitest'
+import { afterAll, beforeAll, expect, test, vi } from 'vitest'
 import { sha256 } from '@/lib/auth/crypto'
 import {
   AccountConflictError,
@@ -19,12 +19,17 @@ import {
   updateUserAccess,
 } from '@/lib/auth/session-store'
 import { POST as localSession } from '@/app/api/auth/local/session/route'
+import { POST as aiRoute } from '@/app/api/newsletters/[id]/ai/route'
+import { POST as progressRoute } from '@/app/api/newsletters/[id]/progress/route'
 import { DELETE as purgeRoute } from '@/app/api/newsletters/[id]/purge/route'
+import { releaseAiRequest, reserveAiRequest } from '@/lib/ai/limits'
 import { closePool, getPool } from '@/lib/db/pool'
 import {
   acquireLease,
   archiveNewsletter,
+  assertEditingAuthority,
   createNewsletter,
+  duplicateNewsletter,
   discardNewsletter,
   EditConflictError,
   getNewsletter,
@@ -39,9 +44,12 @@ import {
   replaceTemplate,
   restoreRevision,
   saveNewsletter,
+  setNewsletterProgress,
+  getSentVersion,
   takeoverLease,
 } from '@/lib/newsletters/service'
 import { migrateDatabase } from '../scripts/migrate.mjs'
+import { canonicalJson } from '@/lib/canonical-json'
 import { renderExportedHtml } from '@/lib/export-html'
 import type { NewsletterData } from '@/types/newsletter'
 
@@ -56,7 +64,10 @@ function titled(content: NewsletterData, title: string): NewsletterData {
 function purgeRequest(token: string, id: string) {
   return new Request(`http://localhost/api/newsletters/${id}/purge`, {
     method: 'DELETE',
-    headers: { cookie: `${SESSION_COOKIE}=${token}`, origin: 'http://localhost' },
+    headers: {
+      cookie: `${SESSION_COOKIE}=${token}`,
+      origin: 'http://localhost',
+    },
   })
 }
 
@@ -136,7 +147,7 @@ afterAll(async () => {
 test('migrations apply once, fail closed, and serialize', async () => {
   await migrateDatabase(databaseUrl)
   const applied = await getPool().query('SELECT count(*)::text AS count FROM schema_migrations')
-  expect(Number(applied.rows[0].count)).toBe(3)
+  expect(Number(applied.rows[0].count)).toBe(4)
 
   await server.createDatabase('slate_editor_race')
   const raceUrl = 'postgresql://postgres:password@127.0.0.1:55432/slate_editor_race'
@@ -145,7 +156,7 @@ test('migrations apply once, fail closed, and serialize', async () => {
   await client.connect()
   const raced = await client.query('SELECT count(*)::text AS count FROM schema_migrations')
   await client.end()
-  expect(Number(raced.rows[0].count)).toBe(3)
+  expect(Number(raced.rows[0].count)).toBe(4)
 
   const missing = spawnSync(process.execPath, ['scripts/migrate.mjs'], {
     env: { ...process.env, DATABASE_URL: '' },
@@ -175,7 +186,10 @@ test('Windows and Linux migration checksums are compatible without rewriting the
     "SELECT sql_sha256 FROM schema_migrations WHERE id = '001_initial.sql'",
   )
   try {
-    for (const [storedSql, checkedOutSql] of [[crlf, lf], [lf, crlf]]) {
+    for (const [storedSql, checkedOutSql] of [
+      [crlf, lf],
+      [lf, crlf],
+    ]) {
       const storedHash = checksum(storedSql)
       await getPool().query("UPDATE schema_migrations SET sql_sha256 = $1 WHERE id = '001_initial.sql'", [storedHash])
       await writeFile(file, checkedOutSql)
@@ -189,7 +203,9 @@ test('Windows and Linux migration checksums are compatible without rewriting the
     }
   } finally {
     await writeFile(file, original)
-    await getPool().query("UPDATE schema_migrations SET sql_sha256 = $1 WHERE id = '001_initial.sql'", [recorded.rows[0].sql_sha256])
+    await getPool().query("UPDATE schema_migrations SET sql_sha256 = $1 WHERE id = '001_initial.sql'", [
+      recorded.rows[0].sql_sha256,
+    ])
   }
 })
 
@@ -506,6 +522,7 @@ test('permanent deletion only purges archived newsletters and their history', as
     subject: `admin-purge-${crypto.randomUUID()}`,
   })
   const created = await createNewsletter(ada, 'ff')
+  const preservedTitle = (await getNewsletter(created.id))!.summary.title
   await getPool().query(
     `INSERT INTO newsletter_save_receipts (
        id, newsletter_id, client_save_id, actor_id, base_version, request_fingerprint, committed_version
@@ -521,6 +538,20 @@ test('permanent deletion only purges archived newsletters and their history', as
   expect(await getNewsletter(created.id)).not.toBeNull()
   expect(await auditCount(created.id)).toBe(0)
 
+  const lease = await acquireLease(created.id, ada)
+  await setNewsletterProgress(created.id, {
+    userId: ada,
+    token: lease.token,
+    expectedVersion: 1,
+    progress: 'sent',
+  })
+  expect(
+    (await getPool().query('SELECT 1 FROM newsletter_progress_receipts WHERE newsletter_id = $1', [created.id]))
+      .rowCount,
+  ).toBe(1)
+  expect(
+    (await getPool().query('SELECT 1 FROM newsletter_sent_marks WHERE newsletter_id = $1', [created.id])).rowCount,
+  ).toBe(1)
   await discardNewsletter(created.id, ada)
   const editorSession = await createSession(ada)
   const forbidden = await purgeRoute(purgeRequest(editorSession.token, created.id), {
@@ -528,7 +559,11 @@ test('permanent deletion only purges archived newsletters and their history', as
   })
   expect(forbidden.status).toBe(403)
   expect(await getNewsletter(created.id)).not.toBeNull()
-  expect(await dependentCount(created.id)).toEqual({ receipts: 1, recovery: 1, revisions: expect.any(Number) })
+  expect(await dependentCount(created.id)).toEqual({
+    receipts: 1,
+    recovery: 1,
+    revisions: expect.any(Number),
+  })
   expect((await dependentCount(created.id)).revisions).toBeGreaterThan(0)
   expect(await auditCount(created.id)).toBe(0)
 
@@ -538,12 +573,23 @@ test('permanent deletion only purges archived newsletters and their history', as
   })
   expect(purged.status).toBe(200)
   expect(await getNewsletter(created.id)).toBeNull()
-  expect(await dependentCount(created.id)).toEqual({ receipts: 0, recovery: 0, revisions: 0 })
+  expect(await dependentCount(created.id)).toEqual({
+    receipts: 0,
+    recovery: 0,
+    revisions: 0,
+  })
+  expect(
+    (await getPool().query('SELECT 1 FROM newsletter_progress_receipts WHERE newsletter_id = $1', [created.id]))
+      .rowCount,
+  ).toBe(0)
+  expect(
+    (await getPool().query('SELECT 1 FROM newsletter_sent_marks WHERE newsletter_id = $1', [created.id])).rowCount,
+  ).toBe(0)
   const audit = await getPool().query<{ title: string; actor_id: string }>(
     'SELECT title, actor_id FROM newsletter_purge_events WHERE newsletter_id = $1',
     [created.id],
   )
-  expect(audit.rows).toEqual([{ title: 'Friday Focus Newsletter', actor_id: admin }])
+  expect(audit.rows).toEqual([{ title: preservedTitle, actor_id: admin }])
   const missing = await purgeRoute(purgeRequest(adminSession.token, created.id), {
     params: Promise.resolve({ id: created.id }),
   })
@@ -639,4 +685,377 @@ test('import creates a new draft and export keeps the Slate browser link', async
   expect(imported.saveVersion).toBe(1)
   const revisions = await listRevisions(imported.id)
   expect(revisions[0].action).toBe('import')
+  const legacy = await importNewsletterDraft(userId, {
+    ...source.content,
+    issue: undefined,
+    progress: 'sent',
+  })
+  const legacyRow = await getNewsletter(legacy.id)
+  expect(legacyRow?.summary.title).toBe(source.content.masthead.title)
+  expect(legacyRow?.summary.issueDate).toBeNull()
+  expect(legacyRow?.summary.progress).toBe('draft')
+  expect(legacyRow?.summary.sentMarkId).toBeNull()
+})
+
+test('new issues get an editable title while older titles stay untouched', async () => {
+  const userId = await editor('Issue Namer')
+  const created = await createNewsletter(userId, 'ff')
+  expect(created.content.masthead.title).toBe('Friday Focus Newsletter')
+  expect(created.content.issue?.title).toBeTruthy()
+  expect(created.content.issue?.title).not.toBe('Friday Focus Newsletter')
+  expect((await getNewsletter(created.id))?.summary.title).toBe(created.content.issue?.title)
+  await getPool().query(`UPDATE newsletters SET title = 'Friday Focus Newsletter', issue_date = NULL WHERE id = $1`, [
+    created.id,
+  ])
+  expect((await getNewsletter(created.id))?.summary).toMatchObject({
+    title: 'Friday Focus Newsletter',
+    issueDate: null,
+    progress: 'draft',
+  })
+})
+
+test('library filters combine template, title search, and archive state', async () => {
+  const userId = await editor('Filter Editor')
+  const focus = await createNewsletter(userId, 'ff')
+  const briefing = await createNewsletter(userId, 'briefing')
+  await discardNewsletter(briefing.id, userId)
+  const activeFocus = await listNewsletters(undefined, {
+    archived: false,
+    template: 'ff',
+    query: focus.content.issue?.title,
+  })
+  expect(activeFocus.map((item) => item.id)).toContain(focus.id)
+  expect(activeFocus.map((item) => item.id)).not.toContain(briefing.id)
+  const archivedBriefing = await listNewsletters(undefined, {
+    archived: true,
+    template: 'briefing',
+  })
+  expect(archivedBriefing.map((item) => item.id)).toContain(briefing.id)
+  expect(await listNewsletters(undefined, { query: 'zzzz-no-such-issue' })).toEqual([])
+  await getPool().query('UPDATE newsletters SET title = $2 WHERE id = $1', [focus.id, 'Progress_100% Newsletter'])
+  expect((await listNewsletters(undefined, { query: '_100%' })).map((item) => item.id)).toContain(focus.id)
+})
+
+test('progress records a sent version without treating later edits as the sent copy', async () => {
+  const ada = await editor('Ada Progress')
+  const grace = await editor('Grace Progress')
+  const created = await createNewsletter(ada, 'ff')
+  const lease = await acquireLease(created.id, ada)
+  await expect(
+    setNewsletterProgress(created.id, {
+      userId: grace,
+      token: 'missing',
+      expectedVersion: lease.saveVersion,
+      progress: 'ready',
+    }),
+  ).rejects.toMatchObject({ code: 'lease' })
+  await expect(
+    setNewsletterProgress(created.id, {
+      userId: ada,
+      token: lease.token,
+      expectedVersion: lease.saveVersion - 1,
+      progress: 'ready',
+    }),
+  ).rejects.toMatchObject({ code: 'version' })
+  expect((await getNewsletter(created.id))?.summary.progress).toBe('draft')
+  const ready = await setNewsletterProgress(created.id, {
+    userId: ada,
+    token: lease.token,
+    expectedVersion: lease.saveVersion,
+    progress: 'ready',
+  })
+  expect(ready.progress).toBe('ready')
+  const sent = await setNewsletterProgress(created.id, {
+    userId: ada,
+    token: lease.token,
+    expectedVersion: ready.saveVersion,
+    progress: 'sent',
+  })
+  const recorded = await getSentVersion(created.id)
+  const retried = await setNewsletterProgress(created.id, {
+    userId: ada,
+    token: lease.token,
+    expectedVersion: ready.saveVersion,
+    progress: 'sent',
+  })
+  expect(retried.saveVersion).toBe(sent.saveVersion)
+  expect(
+    (await getPool().query('SELECT id FROM newsletter_sent_marks WHERE newsletter_id = $1', [created.id])).rows,
+  ).toHaveLength(1)
+  expect(recorded?.saveVersion).toBe(sent.saveVersion)
+  expect(recorded?.changedSinceSent).toBe(false)
+  const saved = await saveNewsletter(created.id, {
+    userId: ada,
+    token: lease.token,
+    expectedVersion: sent.saveVersion,
+    saveId: 'after-sent',
+    snapshot: titled(created.content, 'Changed after sending'),
+  })
+  expect((await getNewsletter(created.id))?.summary.changedSinceSent).toBe(true)
+  expect((await getNewsletter(created.id))?.summary.progress).toBe('sent')
+  const stillRecorded = await getSentVersion(created.id)
+  expect(stillRecorded?.snapshot.masthead.title).toBe(created.content.masthead.title)
+  expect(stillRecorded?.snapshot.masthead.title).not.toBe('Changed after sending')
+  expect(saved.saveVersion).toBeGreaterThan(sent.saveVersion)
+  expect(saved.changedSinceSent).toBe(true)
+  const reverted = await saveNewsletter(created.id, {
+    userId: ada,
+    token: lease.token,
+    expectedVersion: saved.saveVersion,
+    saveId: 'restore-sent-content',
+    snapshot: created.content,
+  })
+  expect(reverted.changedSinceSent).toBe(false)
+  const resumed = await resumeLease(created.id, ada, lease.token)
+  expect(resumed.summary).toMatchObject({
+    progress: 'sent',
+    changedSinceSent: false,
+    sentMarkId: recorded!.id,
+  })
+  expect(resumed.sentCanonical).toBe(canonicalJson(recorded!.snapshot))
+  const taken = await takeoverLease(created.id, ada)
+  expect(taken.summary).toMatchObject({
+    progress: 'sent',
+    changedSinceSent: false,
+    sentMarkId: recorded!.id,
+  })
+  expect(taken.sentCanonical).toBe(resumed.sentCanonical)
+})
+
+test('AI reservations enforce concurrency and stale releases cannot delete a newer reservation', async () => {
+  const userId = await editor('AI Limits')
+  const first = await reserveAiRequest(userId)
+  await expect(reserveAiRequest(userId)).rejects.toThrow(/already being prepared/)
+  await getPool().query("UPDATE ai_inflight SET started_at = now() - interval '1 minute' WHERE actor_id = $1", [userId])
+  const second = await reserveAiRequest(userId)
+  await releaseAiRequest(userId, first)
+  await expect(reserveAiRequest(userId)).rejects.toThrow(/already being prepared/)
+  await releaseAiRequest(userId, second)
+  await getPool().query(
+    'INSERT INTO ai_usage_events (id, actor_id) SELECT gen_random_uuid(), $1 FROM generate_series(1, 30)',
+    [userId],
+  )
+  await expect(reserveAiRequest(userId)).rejects.toThrow(/limit/)
+})
+
+test('duplicating starts a draft and retries return the same copy', async () => {
+  const userId = await editor('Duplicator')
+  const source = await createNewsletter(userId, 'briefing')
+  const lease = await acquireLease(source.id, userId)
+  await setNewsletterProgress(source.id, {
+    userId,
+    token: lease.token,
+    expectedVersion: lease.saveVersion,
+    progress: 'sent',
+  })
+  const first = await duplicateNewsletter(source.id, userId, {
+    requestId: 'duplicate-request-1',
+    issueTitle: 'November 7, 2026',
+    issueDate: 'November 7, 2026',
+  })
+  const second = await duplicateNewsletter(source.id, userId, {
+    requestId: 'duplicate-request-1',
+    issueTitle: 'November 7, 2026',
+  })
+  expect(second).toMatchObject({ id: first.id, idempotent: true })
+  const copy = await getNewsletter(first.id)
+  expect(copy?.summary).toMatchObject({
+    progress: 'draft',
+    title: 'November 7, 2026',
+    sourceNewsletterId: source.id,
+    sentMarkId: null,
+    archived: false,
+  })
+  expect(copy?.content.template).toBe('briefing')
+  expect((await listRevisions(first.id)).map((item) => item.action)).toEqual(['duplicate'])
+  expect((await getNewsletter(source.id))?.summary.progress).toBe('sent')
+  expect((await listRevisions(source.id)).some((item) => item.action === 'duplicate')).toBe(false)
+  const receipts = await getPool().query(
+    'SELECT count(*)::text AS count FROM newsletter_save_receipts WHERE newsletter_id = $1',
+    [first.id],
+  )
+  const recovery = await getPool().query(
+    'SELECT count(*)::text AS count FROM newsletter_recovery_drafts WHERE newsletter_id = $1',
+    [first.id],
+  )
+  expect(receipts.rows[0].count).toBe('0')
+  expect(recovery.rows[0].count).toBe('0')
+})
+
+test('configured AI requests do not save content and reject takeover during generation', async () => {
+  const userId = await editor('AI Happy Path')
+  const other = await editor('AI Takeover')
+  const created = await createNewsletter(userId, 'ff')
+  const session = await createSession(userId)
+  const lease = await acquireLease(created.id, userId)
+  const target = {
+    kind: 'card',
+    sectionKey: 'deadlines',
+    cardIndex: 0,
+    field: 'body_html',
+    originalText: created.content.sections[0].cards![0].body_html,
+    label: 'Sample Announcement',
+  }
+  const request = (selected = target) =>
+    new Request(`http://localhost/api/newsletters/${created.id}/ai`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://localhost',
+        cookie: `${SESSION_COOKIE}=${session.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'edit',
+        token: lease.token,
+        expectedVersion: lease.saveVersion,
+        target: selected,
+      }),
+    })
+  const fetchMock = vi.spyOn(globalThis, 'fetch')
+  vi.stubEnv('AI_GATEWAY_API_KEY', 'test-key')
+  vi.stubEnv('AI_GATEWAY_MODEL', 'test/model')
+  const output = () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                proposed: '<p>Clear copy.</p>',
+                reasons: [{ guide: 'Section 3', text: 'Lead with the subject.' }],
+              }),
+            },
+          },
+        ],
+      }),
+    )
+  try {
+    fetchMock.mockImplementation(async () => output())
+    const valid = await aiRoute(request(), {
+      params: Promise.resolve({ id: created.id }),
+    })
+    expect(valid.status).toBe(200)
+    expect((await valid.json()).base.saveVersion).toBe(lease.saveVersion)
+    expect((await getNewsletter(created.id))?.summary.saveVersion).toBe(lease.saveVersion)
+    const invalid = await aiRoute(request({ ...target, field: 'preheader' }), {
+      params: Promise.resolve({ id: created.id }),
+    })
+    expect(invalid.status).toBe(400)
+    fetchMock.mockImplementation(async () => {
+      await takeoverLease(created.id, other)
+      return output()
+    })
+    const lost = await aiRoute(request(), {
+      params: Promise.resolve({ id: created.id }),
+    })
+    expect(lost.status).toBe(409)
+    expect((await getNewsletter(created.id))?.content.sections[0].cards![0].body_html).toBe(target.originalText)
+  } finally {
+    fetchMock.mockRestore()
+    vi.unstubAllEnvs()
+  }
+})
+
+test('AI requests require editing authority and do not invent output when unconfigured', async () => {
+  const userId = await editor('AI Editor')
+  const created = await createNewsletter(userId, 'ff')
+  const session = await createSession(userId)
+  const denied = await aiRoute(
+    new Request(`http://localhost/api/newsletters/${created.id}/ai`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://localhost',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ action: 'edit' }),
+    }),
+    { params: Promise.resolve({ id: created.id }) },
+  )
+  expect(denied.status).toBe(401)
+  const viewOnly = await aiRoute(
+    new Request(`http://localhost/api/newsletters/${created.id}/ai`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://localhost',
+        cookie: `${SESSION_COOKIE}=${session.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'edit',
+        token: 'lost-lease',
+        expectedVersion: 1,
+        target: {
+          kind: 'card',
+          sectionKey: 'deadlines',
+          cardIndex: 0,
+          field: 'body_html',
+          originalText: created.content.sections[0].cards?.[0].body_html,
+          label: 'Sample Announcement',
+        },
+      }),
+    }),
+    { params: Promise.resolve({ id: created.id }) },
+  )
+  expect(viewOnly.status).toBe(409)
+  const lease = await acquireLease(created.id, userId)
+  const previousKey = process.env.AI_GATEWAY_API_KEY
+  const previousModel = process.env.AI_GATEWAY_MODEL
+  delete process.env.AI_GATEWAY_API_KEY
+  delete process.env.AI_GATEWAY_MODEL
+  try {
+    const unconfigured = await aiRoute(
+      new Request(`http://localhost/api/newsletters/${created.id}/ai`, {
+        method: 'POST',
+        headers: {
+          origin: 'http://localhost',
+          cookie: `${SESSION_COOKIE}=${session.token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'edit',
+          token: lease.token,
+          expectedVersion: lease.saveVersion,
+          target: {
+            kind: 'card',
+            sectionKey: created.content.sections[0].key,
+            cardIndex: 0,
+            field: 'body_html',
+            originalText: created.content.sections[0].cards?.[0].body_html,
+            label: 'Sample Announcement',
+          },
+        }),
+      }),
+      { params: Promise.resolve({ id: created.id }) },
+    )
+    expect(unconfigured.status).toBe(503)
+    expect(await unconfigured.json()).toMatchObject({
+      error: expect.stringMatching(/not configured/),
+    })
+  } finally {
+    if (previousKey === undefined) delete process.env.AI_GATEWAY_API_KEY
+    else process.env.AI_GATEWAY_API_KEY = previousKey
+    if (previousModel === undefined) delete process.env.AI_GATEWAY_MODEL
+    else process.env.AI_GATEWAY_MODEL = previousModel
+  }
+  expect((await getNewsletter(created.id))?.summary.saveVersion).toBe(lease.saveVersion)
+  await expect(assertEditingAuthority(created.id, userId, 'lost-lease', lease.saveVersion)).rejects.toMatchObject({
+    code: 'lease',
+  })
+  const blocked = await progressRoute(
+    new Request(`http://localhost/api/newsletters/${created.id}/progress`, {
+      method: 'POST',
+      headers: {
+        origin: 'http://localhost',
+        cookie: `${SESSION_COOKIE}=${session.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        progress: 'sent',
+        token: 'lost-lease',
+        expectedVersion: lease.saveVersion,
+      }),
+    }),
+    { params: Promise.resolve({ id: created.id }) },
+  )
+  expect(blocked.status).toBe(409)
 })

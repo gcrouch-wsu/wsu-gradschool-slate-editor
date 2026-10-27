@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ConfirmModal from '@/components/ConfirmModal'
 import { errorMessage, RequestError, requestJson, jsonBody } from '@/lib/client/request'
-import type { TemplateType } from '@/types/newsletter'
+import { formatIssueDate } from '@/lib/issue'
+import type { NewsletterProgress, TemplateType } from '@/types/newsletter'
 
 interface Summary {
   id: string
@@ -16,6 +17,14 @@ interface Summary {
   leaseHeld: boolean
   leaseHolderName: string | null
   leaseHolderUserId: string | null
+  progress: NewsletterProgress
+  issueDate: string | null
+  changedSinceSent: boolean
+}
+const progressLabels: Record<NewsletterProgress, string> = {
+  draft: 'Draft',
+  ready: 'Ready for Slate',
+  sent: 'Sent via Slate',
 }
 interface LibraryResponse {
   newsletters: Summary[]
@@ -39,7 +48,9 @@ export default function NewsletterLibraryPage() {
   }, [router])
   const [newsletters, setNewsletters] = useState<Summary[]>([])
   const [archived, setArchived] = useState(false)
-  const [loadedView, setLoadedView] = useState<boolean | null>(null)
+  const [templateFilter, setTemplateFilter] = useState<TemplateType | 'all'>('all')
+  const [query, setQuery] = useState('')
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const [user, setUser] = useState<LibraryResponse['user'] | null>(null)
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
@@ -53,6 +64,9 @@ export default function NewsletterLibraryPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<Summary | null>(null)
   const [pendingPurge, setPendingPurge] = useState<Summary | null>(null)
+  const [duplicateTarget, setDuplicateTarget] = useState<Summary | null>(null)
+  const [duplicateTitle, setDuplicateTitle] = useState('')
+  const duplicateRequest = useRef<string | null>(null)
   const [lastDeleted, setLastDeleted] = useState<Summary | null>(null)
   const [notice, setNotice] = useState('')
 
@@ -60,11 +74,14 @@ export default function NewsletterLibraryPage() {
     async (signal?: AbortSignal) => {
       const sequence = ++requestSequence.current
       try {
-        const body = await requestJson<LibraryResponse>(`/api/newsletters?archived=${archived}`, { signal })
+        const params = new URLSearchParams({ archived: String(archived) })
+        if (templateFilter !== 'all') params.set('template', templateFilter)
+        if (query.trim()) params.set('q', query.trim())
+        const body = await requestJson<LibraryResponse>(`/api/newsletters?${params}`, { signal })
         if (sequence !== requestSequence.current || signal?.aborted) return
         setNewsletters(body.newsletters)
         setUser(body.user)
-        setLoadedView(archived)
+        setLoadedKey(`${archived}|${templateFilter}|${query.trim()}`)
         setLoadError('')
       } catch (failure) {
         if (signal?.aborted || sequence !== requestSequence.current) return
@@ -77,7 +94,7 @@ export default function NewsletterLibraryPage() {
         if (sequence === requestSequence.current) setRefreshing(false)
       }
     },
-    [archived],
+    [archived, templateFilter, query],
   )
 
   useEffect(() => {
@@ -190,6 +207,33 @@ export default function NewsletterLibraryPage() {
       end()
     }
   }
+  function openDuplicate(target: Summary) {
+    duplicateRequest.current = crypto.randomUUID()
+    setDuplicateTitle(formatIssueDate())
+    setDuplicateTarget(target)
+  }
+  async function confirmDuplicate() {
+    if (!duplicateTarget || !duplicateRequest.current || !begin('Duplicating for the next issue…')) return
+    const requestId = duplicateRequest.current
+    try {
+      const created = await requestJson<{ id: string }>(
+        `/api/newsletters/${duplicateTarget.id}/lifecycle`,
+        jsonBody({
+          action: 'duplicate',
+          requestId,
+          issueTitle: duplicateTitle,
+          issueDate: duplicateTitle,
+        }),
+      )
+      duplicateRequest.current = null
+      setDuplicateTarget(null)
+      routerRef.current.push(`/newsletters/${created.id}`)
+    } catch (failure) {
+      setError(`The next issue could not be created. ${errorMessage(failure)} Retry uses the same request and will not create another copy.`)
+    } finally {
+      end()
+    }
+  }
   async function signOut() {
     if (!begin('Signing out…')) return
     try {
@@ -252,6 +296,45 @@ export default function NewsletterLibraryPage() {
       <p className="text-sm text-wsu-text-muted mb-6">
         Start a new newsletter or import HTML previously exported from this editor. Open a draft to continue editing.
       </p>
+      <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto] sm:items-end">
+        <label className="text-sm font-semibold" htmlFor="template-filter">
+          Template
+          <select
+            id="template-filter"
+            className="mt-1 min-h-11 w-full rounded-md border-2 border-wsu-crimson bg-white px-3"
+            value={templateFilter}
+            disabled={busy !== null}
+            onChange={(event) => setTemplateFilter(event.target.value as TemplateType | 'all')}
+          >
+            <option value="all">All types</option>
+            <option value="ff">Friday Focus</option>
+            <option value="briefing">Briefing</option>
+            <option value="letter">Slate Campaign</option>
+          </select>
+        </label>
+        <label className="text-sm font-semibold" htmlFor="title-search">
+          Search titles
+          <input
+            id="title-search"
+            type="search"
+            value={query}
+            disabled={busy !== null}
+            onChange={(event) => setQuery(event.target.value)}
+            className="mt-1 min-h-11 w-full rounded-md border border-wsu-border-light px-3"
+          />
+        </label>
+        <button
+          className={secondaryButton}
+          type="button"
+          disabled={busy !== null || (templateFilter === 'all' && query.trim() === '')}
+          onClick={() => {
+            setTemplateFilter('all')
+            setQuery('')
+          }}
+        >
+          Clear filters
+        </button>
+      </div>
       <div className="flex flex-wrap gap-3 mb-4">
         <button
           className={archived ? secondaryButton : primaryButton}
@@ -284,7 +367,7 @@ export default function NewsletterLibraryPage() {
         </button>
       </div>
       <div role="status" aria-live="polite" className="mb-3 text-sm">
-        {busy || (loadedView !== archived && !loadError ? 'Loading newsletters…' : '')}
+        {busy || (loadedKey !== `${archived}|${templateFilter}|${query.trim()}` && !loadError ? 'Loading newsletters…' : '')}
       </div>
       {loadError && (
         <div role="alert" className="mb-4 text-red-800">
@@ -314,19 +397,37 @@ export default function NewsletterLibraryPage() {
           )}
         </div>
       )}
-      {loadedView === archived && newsletters.length === 0 && !loadError && (
-        <p className="text-wsu-text-muted">
-          {archived
-            ? 'No archived drafts. Deleted drafts appear here and can be restored. An administrator can permanently delete an archived draft, and that cannot be undone.'
-            : 'No drafts yet. Choose New Friday Focus, New Briefing, New Slate Campaign, or Import HTML above.'}
-        </p>
+      {loadedKey === `${archived}|${templateFilter}|${query.trim()}` && newsletters.length === 0 && !loadError && (
+        <div className="text-wsu-text-muted">
+          {templateFilter !== 'all' || query.trim() ? (
+            <p>
+              No newsletters match these filters.{' '}
+              <button
+                type="button"
+                className="font-semibold text-wsu-crimson underline"
+                onClick={() => {
+                  setTemplateFilter('all')
+                  setQuery('')
+                }}
+              >
+                Clear filters
+              </button>
+            </p>
+          ) : (
+            <p>
+              {archived
+                ? 'No archived drafts. Deleted drafts appear here and can be restored. An administrator can permanently delete an archived draft, and that cannot be undone.'
+                : 'No drafts yet. Choose New Friday Focus, New Briefing, New Slate Campaign, or Import HTML above.'}
+            </p>
+          )}
+        </div>
       )}
       <ul
         className="space-y-3"
         aria-label={archived ? 'Archived newsletters' : 'Active newsletters'}
-        aria-busy={refreshing || loadedView !== archived}
+        aria-busy={refreshing || loadedKey !== `${archived}|${templateFilter}|${query.trim()}`}
       >
-        {loadedView === archived &&
+        {loadedKey === `${archived}|${templateFilter}|${query.trim()}` &&
           newsletters.map((newsletter) => (
             <li key={newsletter.id} className="border border-wsu-border-light rounded-lg p-4 bg-white">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -336,9 +437,14 @@ export default function NewsletterLibraryPage() {
                       {newsletter.title}
                     </Link>
                   </h2>
-                  <p className="text-sm text-wsu-text-muted break-words">
-                    {templateNames[newsletter.template]} · last {archived ? 'archived' : 'saved'} by{' '}
-                    {newsletter.updatedByName} ·{' '}
+                  <p className="text-sm font-semibold text-wsu-text-dark">{templateNames[newsletter.template]}</p>
+                  <p className="text-sm text-wsu-text-dark">
+                    {progressLabels[newsletter.progress] ?? 'Draft'}
+                    {newsletter.changedSinceSent ? ' · Changed since sent' : ''}
+                    {newsletter.issueDate ? ` · ${newsletter.issueDate}` : ''}
+                  </p>
+                  <p className="text-sm text-wsu-text-dark break-words">
+                    Last {archived ? 'archived' : 'saved'} by <span className="font-semibold">{newsletter.updatedByName}</span>{' '}
                     <time dateTime={newsletter.updatedAt}>{new Date(newsletter.updatedAt).toLocaleString()}</time>
                   </p>
                   {!archived && (
@@ -357,6 +463,15 @@ export default function NewsletterLibraryPage() {
                   >
                     Open
                   </Link>
+                  <button
+                    className={secondaryButton}
+                    type="button"
+                    disabled={busy !== null}
+                    aria-describedby={`title-${newsletter.id}`}
+                    onClick={() => openDuplicate(newsletter)}
+                  >
+                    Duplicate for next issue
+                  </button>
                   {archived ? (
                     <>
                       <button
@@ -437,6 +552,50 @@ export default function NewsletterLibraryPage() {
           if (!busyRef.current) setPendingPurge(null)
         }}
       />
+      {duplicateTarget && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="duplicate-title"
+            className="w-full max-w-lg rounded-lg bg-white p-4"
+          >
+            <h2 id="duplicate-title" className="text-lg font-semibold">
+              Duplicate for next issue
+            </h2>
+            <p className="mt-2 text-sm">
+              Creates a new draft from “{duplicateTarget.title}”. Progress, editing holds, and sent records stay with the
+              original.
+            </p>
+            <label className="mt-3 block text-sm font-semibold" htmlFor="next-issue-title">
+              Issue title or date
+            </label>
+            <input
+              id="next-issue-title"
+              autoFocus
+              className="mt-1 min-h-11 w-full rounded-md border border-wsu-border-light px-3"
+              value={duplicateTitle}
+              onChange={(event) => setDuplicateTitle(event.target.value)}
+            />
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button className={primaryButton} type="button" disabled={busy !== null} onClick={() => void confirmDuplicate()}>
+                {busy === 'Duplicating for the next issue…' ? 'Duplicating…' : 'Create next issue'}
+              </button>
+              <button
+                className={secondaryButton}
+                type="button"
+                disabled={busy !== null}
+                onClick={() => {
+                  duplicateRequest.current = null
+                  setDuplicateTarget(null)
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

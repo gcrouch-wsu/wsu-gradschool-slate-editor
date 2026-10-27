@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { DocumentValidationError } from '@/lib/newsletter-document'
 import { AccountConflictError } from '@/lib/auth/session-store'
+import { AiConfigurationError, AiLimitError, AiOutputError, AiProviderError } from '@/lib/ai/errors'
 import { EditConflictError } from '@/lib/newsletters/service'
 import { sessionTtlSeconds } from '@/lib/runtime-config'
 import { OKTA_ID_TOKEN_COOKIE, SESSION_COOKIE } from '@/lib/auth/session-store'
@@ -19,6 +20,10 @@ export function jsonError(error: unknown): NextResponse {
   if (error instanceof DocumentValidationError || error instanceof SyntaxError) {
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
+  if (error instanceof AiConfigurationError) return NextResponse.json({ error: error.message }, { status: 503 })
+  if (error instanceof AiLimitError) return NextResponse.json({ error: error.message }, { status: 429 })
+  if (error instanceof AiOutputError) return NextResponse.json({ error: error.message }, { status: 422 })
+  if (error instanceof AiProviderError) return NextResponse.json({ error: error.message }, { status: 502 })
   console.error(
     JSON.stringify({
       event: 'request_failed',

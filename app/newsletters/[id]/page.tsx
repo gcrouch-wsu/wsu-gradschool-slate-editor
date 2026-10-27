@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import SharedNewsletterEditor from '@/components/SharedNewsletterEditor'
 import { errorMessage, RequestError, requestJson } from '@/lib/client/request'
-import type { NewsletterData } from '@/types/newsletter'
+import { canonicalJson } from '@/lib/canonical-json'
+import type { NewsletterData, NewsletterProgress } from '@/types/newsletter'
 
 export default function NewsletterEditorPage() {
   const params = useParams<{ id: string }>()
@@ -22,6 +23,10 @@ function DraftLoader({ newsletterId }: { newsletterId: string }) {
     userId: string
     content: NewsletterData
     saveVersion: number
+    progress: NewsletterProgress
+    changedSinceSent: boolean
+    sentMarkId: string | null
+    sentCanonical: string | null
   } | null>(null)
   const [error, setError] = useState('')
   const [deleted, setDeleted] = useState(false)
@@ -36,7 +41,14 @@ function DraftLoader({ newsletterId }: { newsletterId: string }) {
           }),
           requestJson<{
             content: NewsletterData
-            summary: { saveVersion: number; archived: boolean }
+            summary: {
+              saveVersion: number
+              archived: boolean
+              progress: NewsletterProgress
+              changedSinceSent: boolean
+              sentMarkId: string | null
+            }
+            sentCanonical?: string | null
           }>(`/api/newsletters/${newsletterId}`, { signal }),
         ])
         if (signal.aborted) return
@@ -46,6 +58,12 @@ function DraftLoader({ newsletterId }: { newsletterId: string }) {
             userId: session.user.userId,
             content: newsletter.content,
             saveVersion: newsletter.summary.saveVersion,
+            progress: newsletter.summary.progress ?? 'draft',
+            changedSinceSent: Boolean(newsletter.summary.changedSinceSent),
+            sentMarkId: newsletter.summary.sentMarkId ?? null,
+            sentCanonical:
+              newsletter.sentCanonical ??
+              (newsletter.summary.changedSinceSent ? null : canonicalJson(newsletter.content)),
           })
       } catch (failure) {
         if (signal.aborted) return
@@ -85,6 +103,10 @@ function DraftLoader({ newsletterId }: { newsletterId: string }) {
         userId={loaded.userId}
         initialContent={loaded.content}
         initialVersion={loaded.saveVersion}
+        initialProgress={loaded.progress}
+        initialChangedSinceSent={loaded.changedSinceSent}
+        initialSentMarkId={loaded.sentMarkId}
+        initialSentCanonical={loaded.sentCanonical}
       />
     )
   return (

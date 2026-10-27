@@ -2,11 +2,14 @@
 
 import { createHash } from 'node:crypto'
 import sanitizeHtml from 'sanitize-html'
+import { canonicalJson } from '@/lib/canonical-json'
 import type {
   Card,
   Closure,
   Colors,
+  ContentOrigin,
   Footer,
+  IssueIdentity,
   Link,
   Masthead,
   NewsletterData,
@@ -164,15 +167,7 @@ export function documentFingerprint(data: NewsletterData): string {
   return createHash('sha256').update(canonicalJson(data)).digest('hex')
 }
 
-export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(',')}]`
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>
-    const keys = Object.keys(record).sort()
-    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(',')}}`
-  }
-  return JSON.stringify(value)
-}
+export { canonicalJson } from '@/lib/canonical-json'
 
 export function decodeEmbeddedNewsletter(html: string): unknown {
   const base64 = html.match(/<!-- WSU_NEWSLETTER_DATA_B64\s+([\s\S]*?)\s+-->/)
@@ -252,14 +247,34 @@ export function normalizeNewsletter(input: unknown, options: { requireShape?: bo
   }
 
   const template: TemplateType = TEMPLATES.has(raw.template as TemplateType) ? (raw.template as TemplateType) : 'ff'
+  const issue = normalizeIssue(raw.issue)
 
   return {
     template,
+    ...(issue ? { issue } : {}),
     masthead: normalizeMasthead(raw.masthead),
     sections: normalizeSections(raw.sections),
     footer: normalizeFooter(raw.footer),
     settings: normalizeSettings(raw.settings),
   }
+}
+
+function normalizeIssue(value: unknown): IssueIdentity | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  const title = text(record.title, 200).trim()
+  const date = text(record.date, 80).trim()
+  if (!title && !date) return undefined
+  return { title, date }
+}
+
+function contentOrigin(value: unknown): ContentOrigin | undefined {
+  return value === 'graduate_school' || value === 'contributed' ? value : undefined
+}
+
+function withOrigin(card: Card, origin: ContentOrigin | undefined): Card {
+  if (!origin) return card
+  return { ...card, content_origin: origin }
 }
 
 function migrateSocialObject(social: Record<string, unknown>): SocialLink[] {
@@ -436,8 +451,9 @@ function normalizeCard(value: unknown): Card | null {
         ? undefined
         : cssHex(record.table_header_underline_color, '#e0e0e0'),
   }
+  const origin = contentOrigin(record.content_origin)
   if (type === 'letter') {
-    return {
+    return withOrigin({
       type: 'letter',
       ...shared,
       greeting: text(record.greeting, 300),
@@ -449,7 +465,7 @@ function normalizeCard(value: unknown): Card | null {
       signature_image_url: authorUrl(record.signature_image_url),
       signature_image_alt: text(record.signature_image_alt, 300),
       signature_image_width: int(record.signature_image_width, 220, 40, 600),
-    }
+    }, origin)
   }
   const titled = {
     ...shared,
@@ -459,17 +475,17 @@ function normalizeCard(value: unknown): Card | null {
     time: text(record.time, 200),
   }
   if (type === 'resource') {
-    return {
+    return withOrigin({
       type: 'resource',
       ...titled,
       show_icon: bool(record.show_icon, false),
       icon_url: authorUrl(record.icon_url),
       icon_alt: text(record.icon_alt, 300),
       icon_size: int(record.icon_size, 28, 8, 128),
-    }
+    }, origin)
   }
   if (type === 'cta') {
-    return {
+    return withOrigin({
       type: 'cta',
       title: titled.title,
       body_html: shared.body_html,
@@ -511,10 +527,10 @@ function normalizeCard(value: unknown): Card | null {
       button_letter_spacing: int(record.button_letter_spacing, 0, -2, 12),
       button_font_size: int(record.button_font_size, 16, 8, 32),
       text_alignment: align(record.text_alignment, 'left'),
-    }
+    }, origin)
   }
-  if (type === 'event') return { type: 'event', ...titled }
-  return { type: 'standard', ...titled }
+  if (type === 'event') return withOrigin({ type: 'event', ...titled }, origin)
+  return withOrigin({ type: 'standard', ...titled }, origin)
 }
 
 function normalizeSections(value: unknown): Section[] {

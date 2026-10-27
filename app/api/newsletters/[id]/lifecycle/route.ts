@@ -18,9 +18,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       expectedVersion?: number
       template?: TemplateType
       revisionId?: string
+      requestId?: string
+      issueTitle?: string
+      issueDate?: string
     }
     if (body.action === 'duplicate') {
-      return NextResponse.json(await duplicateNewsletter(id, principal.userId), { status: 201 })
+      const created = await duplicateNewsletter(id, principal.userId, {
+        requestId: body.requestId ?? '',
+        issueTitle: body.issueTitle ?? '',
+        issueDate: body.issueDate,
+      })
+      return NextResponse.json(created, { status: created.idempotent ? 200 : 201 })
     }
     if (!body.token || typeof body.expectedVersion !== 'number') {
       return NextResponse.json({ error: 'token and expectedVersion are required.' }, { status: 400 })

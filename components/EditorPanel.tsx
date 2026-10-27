@@ -22,6 +22,9 @@ interface EditorPanelProps {
   templateType: TemplateType
   onTemplateChange?: (type: TemplateType) => void
   readOnly?: boolean
+  onAssist?: (sectionIndex: number, cardIndex: number) => void
+  onSuggestPreheader?: () => void
+  onReview?: () => void
 }
 
 export default function EditorPanel({
@@ -30,6 +33,9 @@ export default function EditorPanel({
   templateType,
   onTemplateChange,
   readOnly = false,
+  onAssist,
+  onSuggestPreheader,
+  onReview,
 }: EditorPanelProps) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     settings: false,
@@ -114,7 +120,7 @@ export default function EditorPanel({
         </button>
         {openSections.masthead && (
           <div id="panel-masthead" className="p-4">
-            <MastheadEditor state={state} updateState={updateState} />
+            <MastheadEditor state={state} updateState={updateState} onSuggestPreheader={onSuggestPreheader} />
           </div>
         )}
       </div>
@@ -139,7 +145,16 @@ export default function EditorPanel({
         </button>
         {openSections.sections && (
           <div id="panel-sections" className="p-4">
-            <SectionsEditor state={state} updateState={updateState} />
+            {onReview && (
+              <button
+                type="button"
+                className="mb-4 inline-flex min-h-11 items-center rounded-md border-2 border-wsu-crimson px-3 text-sm font-semibold text-wsu-crimson"
+                onClick={onReview}
+              >
+                Review newsletter
+              </button>
+            )}
+            <SectionsEditor state={state} updateState={updateState} onAssist={onAssist} />
           </div>
         )}
       </div>

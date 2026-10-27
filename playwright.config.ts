@@ -1,7 +1,11 @@
+import os from 'node:os'
+import path from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: 'tests/browser',
+  // Keep Playwright output outside the project so the dev server does not rebuild when results are written.
+  outputDir: path.join(os.tmpdir(), 'slate-editor-playwright'),
   timeout: 60000,
   fullyParallel: false,
   workers: 1,
