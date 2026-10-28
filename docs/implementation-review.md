@@ -132,6 +132,14 @@ Earlier browser runs exposed nested Escape handling and lost focus when Reset ch
 
 Run database tests separately from browser tests because migration tests temporarily rewrite SQL fixtures. Run builds only after the browser dev server exits. Playwright results and screenshots remain outside the repository. AI responses were mocked; no paid/live request, credential change, commit, push, or production deployment was performed in this UX pass.
 
+## Manual checks for the next real-use test
+
+Automated tests cover these only in development sign-in mode with a local database. Check them by hand on a real issue:
+
+- Send a test issue from Slate and compare it with the editor preview at desktop and phone widths. The preview is approximate.
+- Sign in through the production sign-in flow (and Okta once enabled), then hand off a draft with Save and finish editing and take it over from a second account.
+- Confirm staff instructions, training notes and screenshots use the current labels, including Archive instead of Delete in the library.
+
 ## Limitations
 
 - No live AI Gateway call was made. `AI_GATEWAY_API_KEY` and `AI_GATEWAY_MODEL` are unset here.
