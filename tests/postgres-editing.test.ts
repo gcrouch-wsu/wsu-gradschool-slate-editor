@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:net'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
@@ -51,6 +51,7 @@ import {
   takeoverLease,
 } from '@/lib/newsletters/service'
 import { migrateDatabase } from '../scripts/migrate.mjs'
+import { removeDataDir, stopPostgres } from '../scripts/stop-postgres.mjs'
 import { canonicalJson } from '@/lib/canonical-json'
 import { renderExportedHtml } from '@/lib/export-html'
 import type { NewsletterData } from '@/types/newsletter'
@@ -150,8 +151,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await closePool()
-  if (server) await server.stop()
-  if (databaseDir) await rm(databaseDir, { recursive: true, force: true })
+  await stopPostgres(server)
+  await removeDataDir(databaseDir)
 })
 
 test('migrations apply once, fail closed, and serialize', async () => {

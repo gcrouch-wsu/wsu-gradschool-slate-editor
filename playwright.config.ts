@@ -19,5 +19,7 @@ export default defineConfig({
     url: 'http://127.0.0.1:3100/api/health',
     timeout: 180000,
     reuseExistingServer: false,
+    // Let the server stop Next.js and Postgres itself before Playwright force-kills it (ignored on Windows).
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 20000 },
   },
 })

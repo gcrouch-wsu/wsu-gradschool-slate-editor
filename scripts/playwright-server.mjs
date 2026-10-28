@@ -1,16 +1,20 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import EmbeddedPostgres from 'embedded-postgres'
 import pg from 'pg'
 import { migrateDatabase } from './migrate.mjs'
+import { removeDataDir, stopPostgres } from './stop-postgres.mjs'
 import accounts from '../tests/browser/accounts.json' with { type: 'json' }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const databaseDir = await mkdtemp(join(tmpdir(), 'slate-editor-browser-'))
+// One fixed directory, wiped on start: on Windows Playwright force-kills this server, so a run cannot clean up after itself.
+// The fixed port below already limits this to one run at a time.
+const databaseDir = join(tmpdir(), 'slate-editor-browser-db')
+await rm(databaseDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
 const database = new EmbeddedPostgres({
   databaseDir,
   port: 55433,
@@ -63,14 +67,36 @@ const child = spawn(process.execPath, [nextBin, 'dev', '--hostname', '127.0.0.1'
   },
 })
 
-async function shutdown() {
-  child.kill()
-  await database.stop()
-  process.exit(0)
+function stopNext() {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  // next dev starts its own workers; on Windows only taskkill /T reaches them.
+  if (process.platform === 'win32' && child.pid) {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+  } else {
+    child.kill('SIGTERM')
+  }
 }
 
-process.on('SIGINT', () => void shutdown())
-process.on('SIGTERM', () => void shutdown())
-child.on('exit', (code) => {
-  void database.stop().finally(() => process.exit(code ?? 1))
+let stopping
+function shutdown(code) {
+  stopping ??= (async () => {
+    stopNext()
+    await stopPostgres(database)
+    await removeDataDir(databaseDir)
+    process.exit(code)
+  })()
+  return stopping
+}
+
+process.on('SIGINT', () => void shutdown(0))
+process.on('SIGTERM', () => void shutdown(0))
+child.on('exit', (code) => void shutdown(code ?? 1))
+// Last resort if this process is ended some other way: never leave Postgres running.
+process.on('exit', () => {
+  const pid = database.process?.pid
+  if (pid) {
+    try {
+      process.kill(pid)
+    } catch {}
+  }
 })
