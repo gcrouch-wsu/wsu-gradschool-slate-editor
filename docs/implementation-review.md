@@ -98,6 +98,22 @@ Progress retries, duplicate section keys, stale AI generation and Apply, cancell
 
 Lease/version guards, proposal cancellation and stale checks, contributed-voice handling, same-origin authorization, sanitization, preview isolation, and saved email rendering were preserved. No dependencies, authentication configuration, or migrations were changed.
 
+## Editor usability follow-up
+
+- Story and closure changes copy the affected section instead of changing it in place, so Undo now reverses Save story, Delete story, Remove story or closure, and Save closure. Previously the history snapshot already contained the change and Undo did nothing.
+- New stories and closures enter the draft only on Save; Cancel leaves the newsletter unchanged. Delete moved to the bottom of the story and closure dialogs and asks first. Remove prompts now say Undo can restore the item.
+- Continuous typing in one field (no pause over one second) is one Undo step.
+- Version history lists saved revisions, previews one in a `sandbox=""` iframe, and Restore this version applies it through normal editor state: one Undo step, autosave, and the existing lease and version checks. Progress and sent records do not change. `GET /api/newsletters/[id]/revisions?revision=<id>` returns one normalized snapshot to editors.
+- The view-only banner names the holder and recognises a draft held by the same person in a reloaded or closed tab. The lease token remains tab memory only; Take over editing is still required.
+- Accessibility results stay visible after edits, are marked as possibly out of date, offer Check again, and give Open story where the issue text, link, or image appears in a story.
+- A newsletter review leaves an AI review checklist on the page after the dialog closes or a finding is applied. Its Open story buttons open the referenced story. Suggested wording still applies only from a current review; whole-document staleness checks are unchanged. In review mode the dialog's Discard button is labelled Close.
+- The comparison adds Next unreviewed edit, Accept all remaining, and Pass all remaining. Bulk choices fill only unreviewed edits. Try again is a secondary button once results exist.
+- The preview says it is approximate, waits for a pause in typing before re-rendering, shows render errors, and offers Desktop width (600px) and Phone width (375px). Its scroll position is not preserved after a re-render: reading it would require `allow-same-origin`, which would weaken the preview isolation.
+- Shared drafts list Masthead first and open, then Sections, Footer (closed), and Global Settings last. The sticky bar holds status, Undo, Redo, and the editing-authority action; Check accessibility, Version history, and Export HTML sit in a Review and export row with the suggested order.
+- The library asks for an issue title and date when creating a draft (`POST /api/newsletters` accepts optional `issueTitle` and `issueDate`). Duplicate for next issue has separate title and date fields. Both use the shared dialog focus handling.
+- Label changes: library Delete is now Archive (Archive draft, Undo archive, This draft is archived.). Delete permanently is unchanged. Card wording is now story wording (Add a story, Stories (n), Call to action). Section and closure field labels are associated with their inputs.
+- The single-user editor at `/` (public and development modes) no longer claims the newsletter passes all accessibility checks.
+
 ## Verification
 
 Final local verification on October 27, 2026:

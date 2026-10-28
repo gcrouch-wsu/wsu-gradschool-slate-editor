@@ -226,12 +226,26 @@ export async function getNewsletter(id: string, pool: Pool = getPool()) {
   return { summary: toSummary(row), content, sentCanonical: sentCanonical(row) }
 }
 
-export async function createNewsletter(userId: string, template: TemplateType, pool: Pool = getPool()) {
-  const content = withNewIssue(
+export async function createNewsletter(
+  userId: string,
+  template: TemplateType,
+  pool: Pool = getPool(),
+  issue?: { title?: string; date?: string },
+) {
+  const fresh = withNewIssue(
     normalizeNewsletter(modelFor(template), {
       requireShape: true,
     }),
   )
+  const issueTitle = issue?.title?.trim().slice(0, 200)
+  const issueDate = issue?.date?.trim().slice(0, 80)
+  const content =
+    issueTitle || issueDate
+      ? normalizeNewsletter({
+          ...fresh,
+          issue: { title: issueTitle || fresh.issue?.title || '', date: issueDate ?? fresh.issue?.date ?? '' },
+        })
+      : fresh
   const id = crypto.randomUUID()
   const client = await pool.connect()
   try {
@@ -645,6 +659,15 @@ export async function restoreRevision(
   return mutateWithLease(id, { ...input, action: 'restore', next: snapshot }, pool)
 }
 
+export async function getRevisionSnapshot(id: string, revisionId: string, pool: Pool = getPool()) {
+  const result = await pool.query<{ snapshot: NewsletterData }>(
+    'SELECT snapshot FROM newsletter_revisions WHERE id = $1 AND newsletter_id = $2',
+    [revisionId, id],
+  )
+  const snapshot = result.rows[0]?.snapshot
+  return snapshot ? normalizeNewsletter(snapshot) : null
+}
+
 export async function archiveNewsletter(
   id: string,
   input: { userId: string; token: string; expectedVersion: number },
@@ -957,7 +980,7 @@ export async function assertEditingAuthority(
   )
 }
 
-export async function listRevisions(id: string, pool: Pool = getPool()) {
+export async function listRevisions(id: string, pool: Pool = getPool(), limit = 200) {
   const result = await pool.query<{
     id: string
     revision_number: number
@@ -970,8 +993,9 @@ export async function listRevisions(id: string, pool: Pool = getPool()) {
      FROM newsletter_revisions r
      JOIN users u ON u.id = r.actor_id
      WHERE r.newsletter_id = $1
-     ORDER BY r.revision_number DESC`,
-    [id],
+     ORDER BY r.revision_number DESC
+     LIMIT $2`,
+    [id, limit],
   )
   return result.rows.map((row) => ({
     id: row.id,

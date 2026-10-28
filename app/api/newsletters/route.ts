@@ -35,9 +35,12 @@ export async function POST(request: Request) {
   const principal = await requireEditor(request)
   if (!isPrincipal(principal)) return principal
   try {
-    const body = (await request.json()) as { template?: TemplateType }
+    const body = (await request.json()) as { template?: TemplateType; issueTitle?: unknown; issueDate?: unknown }
     const template = body.template === 'briefing' || body.template === 'letter' ? body.template : 'ff'
-    const created = await createNewsletter(principal.userId, template)
+    const created = await createNewsletter(principal.userId, template, undefined, {
+      title: typeof body.issueTitle === 'string' ? body.issueTitle : undefined,
+      date: typeof body.issueDate === 'string' ? body.issueDate : undefined,
+    })
     return NextResponse.json(created, { status: 201 })
   } catch (error) {
     return jsonError(error)

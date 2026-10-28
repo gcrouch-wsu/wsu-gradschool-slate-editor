@@ -25,6 +25,9 @@ interface EditorPanelProps {
   onAssist?: (sectionIndex: number, cardIndex: number) => void
   onSuggestPreheader?: () => void
   onReview?: () => void
+  /** Shared drafts lead with the issue details and keep rarely used settings last. */
+  issueFirst?: boolean
+  storyRequest?: { sectionIndex: number; cardIndex: number; nonce: number } | null
 }
 
 export default function EditorPanel({
@@ -36,13 +39,56 @@ export default function EditorPanel({
   onAssist,
   onSuggestPreheader,
   onReview,
+  issueFirst = false,
+  storyRequest = null,
 }: EditorPanelProps) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     settings: false,
-    masthead: false,
+    masthead: issueFirst,
     sections: true,
-    footer: true,
+    footer: !issueFirst,
   })
+  const [handledRequest, setHandledRequest] = useState(storyRequest)
+  if (storyRequest !== handledRequest) {
+    // Opening a story from a check result also reveals its section list.
+    setHandledRequest(storyRequest)
+    if (storyRequest && !openSections.sections) setOpenSections((prev) => ({ ...prev, sections: true }))
+  }
+  const panels = {
+    settings: {
+      title: 'Global Settings',
+      icon: Settings,
+      content: <SettingsEditor state={state} updateState={updateState} />,
+    },
+    masthead: {
+      title: 'Masthead',
+      icon: FileText,
+      content: <MastheadEditor state={state} updateState={updateState} onSuggestPreheader={onSuggestPreheader} />,
+    },
+    sections: {
+      title: 'Sections',
+      icon: FileText,
+      content: (
+        <>
+          {onReview && (
+            <button
+              type="button"
+              className="mb-4 inline-flex min-h-11 items-center rounded-md border-2 border-wsu-crimson px-3 text-sm font-semibold text-wsu-crimson"
+              onClick={onReview}
+            >
+              Review newsletter
+            </button>
+          )}
+          <SectionsEditor state={state} updateState={updateState} onAssist={onAssist} storyRequest={storyRequest} />
+        </>
+      ),
+    },
+    footer: {
+      title: 'Footer',
+      icon: Mail,
+      content: <FooterEditor state={state} updateState={updateState} />,
+    },
+  }
 
   const toggleSection = (section: string) => {
     setOpenSections((prev) => ({
@@ -73,116 +119,35 @@ export default function EditorPanel({
         </div>
       )}
 
-      {/* Global Settings */}
-      <div className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
-        <button
-          onClick={() => toggleSection('settings')}
-          aria-expanded={openSections.settings}
-          aria-controls="panel-settings"
-          className="w-full flex items-center justify-between p-4 bg-wsu-bg-light hover:bg-wsu-bg-card transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <Settings className="w-4 h-4 text-wsu-crimson" />
-            <span className="font-semibold text-wsu-text-dark">
-              Global Settings
-            </span>
-          </div>
-          {openSections.settings ? (
-            <ChevronDown className="w-4 h-4" />
-          ) : (
-            <ChevronRight className="w-4 h-4" />
-          )}
-        </button>
-        {openSections.settings && (
-          <div id="panel-settings" className="p-4">
-            <SettingsEditor state={state} updateState={updateState} />
-          </div>
-        )}
-      </div>
-
-      {/* Masthead */}
-      <div className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
-        <button
-          onClick={() => toggleSection('masthead')}
-          aria-expanded={openSections.masthead}
-          aria-controls="panel-masthead"
-          className="w-full flex items-center justify-between p-4 bg-wsu-bg-light hover:bg-wsu-bg-card transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-wsu-crimson" />
-            <span className="font-semibold text-wsu-text-dark">Masthead</span>
-          </div>
-          {openSections.masthead ? (
-            <ChevronDown className="w-4 h-4" />
-          ) : (
-            <ChevronRight className="w-4 h-4" />
-          )}
-        </button>
-        {openSections.masthead && (
-          <div id="panel-masthead" className="p-4">
-            <MastheadEditor state={state} updateState={updateState} onSuggestPreheader={onSuggestPreheader} />
-          </div>
-        )}
-      </div>
-
-      {/* Sections */}
-      <div className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
-        <button
-          onClick={() => toggleSection('sections')}
-          aria-expanded={openSections.sections}
-          aria-controls="panel-sections"
-          className="w-full flex items-center justify-between p-4 bg-wsu-bg-light hover:bg-wsu-bg-card transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-wsu-crimson" />
-            <span className="font-semibold text-wsu-text-dark">Sections</span>
-          </div>
-          {openSections.sections ? (
-            <ChevronDown className="w-4 h-4" />
-          ) : (
-            <ChevronRight className="w-4 h-4" />
-          )}
-        </button>
-        {openSections.sections && (
-          <div id="panel-sections" className="p-4">
-            {onReview && (
-              <button
-                type="button"
-                className="mb-4 inline-flex min-h-11 items-center rounded-md border-2 border-wsu-crimson px-3 text-sm font-semibold text-wsu-crimson"
-                onClick={onReview}
-              >
-                Review newsletter
-              </button>
+      {(issueFirst
+        ? (['masthead', 'sections', 'footer', 'settings'] as const)
+        : (['settings', 'masthead', 'sections', 'footer'] as const)
+      ).map((key) => {
+        const panel = panels[key]
+        const Icon = panel.icon
+        return (
+          <div key={key} className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleSection(key)}
+              aria-expanded={openSections[key]}
+              aria-controls={`panel-${key}`}
+              className="w-full flex items-center justify-between p-4 bg-wsu-bg-light hover:bg-wsu-bg-card transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Icon className="w-4 h-4 text-wsu-crimson" />
+                <span className="font-semibold text-wsu-text-dark">{panel.title}</span>
+              </div>
+              {openSections[key] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+            {openSections[key] && (
+              <div id={`panel-${key}`} className="p-4">
+                {panel.content}
+              </div>
             )}
-            <SectionsEditor state={state} updateState={updateState} onAssist={onAssist} />
           </div>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
-        <button
-          onClick={() => toggleSection('footer')}
-          aria-expanded={openSections.footer}
-          aria-controls="panel-footer"
-          className="w-full flex items-center justify-between p-4 bg-wsu-bg-light hover:bg-wsu-bg-card transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <Mail className="w-4 h-4 text-wsu-crimson" />
-            <span className="font-semibold text-wsu-text-dark">Footer</span>
-          </div>
-          {openSections.footer ? (
-            <ChevronDown className="w-4 h-4" />
-          ) : (
-            <ChevronRight className="w-4 h-4" />
-          )}
-        </button>
-        {openSections.footer && (
-          <div id="panel-footer" className="p-4">
-            <FooterEditor state={state} updateState={updateState} />
-          </div>
-        )}
-      </div>
+        )
+      })}
     </fieldset>
   )
 }

@@ -30,6 +30,7 @@ async function fillTitle(page: Page, value: string) {
 async function createNewsletter(page: Page) {
   await page.goto('/newsletters')
   await page.getByRole('button', { name: 'New Friday Focus' }).click()
+  await page.getByRole('dialog', { name: 'New Friday Focus' }).getByRole('button', { name: 'Create draft' }).click()
   await page.waitForURL(/\/newsletters\/[0-9a-f-]+$/)
   await expect(page.getByTestId('save-status')).toHaveText('Saved', { timeout: 15000 })
   return page.url()

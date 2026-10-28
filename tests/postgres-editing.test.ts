@@ -44,6 +44,7 @@ import {
   restoreArchivedNewsletter,
   replaceTemplate,
   restoreRevision,
+  getRevisionSnapshot,
   saveNewsletter,
   setNewsletterProgress,
   getSentVersion,
@@ -402,6 +403,16 @@ test('saves are versioned, idempotent, and isolated from lease release', async (
   expect((await getNewsletter(created.id))?.content.masthead.title).toBeTruthy()
 })
 
+test('a new draft can be named when it is created', async () => {
+  const userId = await editor('Naming')
+  const named = await createNewsletter(userId, 'ff', undefined, { title: '  Spring orientation  ', date: 'March 2, 2027' })
+  const stored = await getNewsletter(named.id)
+  expect(stored?.content.issue).toEqual({ title: 'Spring orientation', date: 'March 2, 2027' })
+  expect(stored?.summary.title).toBe('Spring orientation')
+  const unnamed = await getNewsletter((await createNewsletter(userId, 'ff')).id)
+  expect(unnamed?.content.issue?.title).toBeTruthy()
+})
+
 test('an expired clean lease cannot be renewed or saved', async () => {
   const userId = await editor('Expiry')
   const created = await createNewsletter(userId, 'briefing')
@@ -460,6 +471,8 @@ test('lifecycle operations rotate or clear lease authority and keep history', as
   const revisions = await listRevisions(created.id)
   const original = revisions.find((revision) => revision.action === 'create')
   expect(original?.actorName).toBe('Lifecycle')
+  expect((await getRevisionSnapshot(created.id, original!.id))?.template).toBe('ff')
+  expect(await getRevisionSnapshot(created.id, crypto.randomUUID())).toBeNull()
   const restored = await restoreRevision(created.id, {
     userId,
     token: replaced.token!,

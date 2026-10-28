@@ -49,8 +49,9 @@ test('filters, duplication, progress, and AI suggestions work together', async (
   const duplicate = page.getByRole('dialog', {
     name: 'Duplicate for next issue',
   })
-  await expect(duplicate.getByLabel('Issue title or date')).toBeFocused()
-  await duplicate.getByLabel('Issue title or date').fill('November 14, 2026')
+  await expect(duplicate.getByLabel('Issue title', { exact: true })).toBeFocused()
+  await duplicate.getByLabel('Issue title', { exact: true }).fill('November 14, 2026')
+  await duplicate.getByLabel('Issue date', { exact: true }).fill('November 14, 2026')
   await duplicate.getByRole('button', { name: 'Create next issue', exact: true }).click()
   await page.waitForURL(/\/newsletters\/[0-9a-f-]+$/)
   const copyId = page.url().split('/').pop()
@@ -80,7 +81,6 @@ test('filters, duplication, progress, and AI suggestions work together', async (
     .getByRole('button', { name: 'Mark as sent via Slate', exact: true })
     .click()
   await expect(page.locator('header')).toContainText('Sent via Slate')
-  await page.getByRole('button', { name: 'Masthead', exact: true }).click()
   await page.getByLabel('Issue title', { exact: true }).fill('Changed after the sent record')
   await expect(page.locator('header')).toContainText('Changed since sent')
   await page.getByRole('button', { name: 'Undo', exact: true }).click()
@@ -157,8 +157,17 @@ test('filters, duplication, progress, and AI suggestions work together', async (
   await expect(review.getByRole('button', { name: 'Changes', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(review.getByText('The application deadline is October 30.').first()).toBeVisible()
   expect(await review.innerText()).not.toContain('<p>')
-  await review.getByRole('button', { name: 'Discard', exact: true }).click()
+  await review.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(review).toHaveCount(0)
+  const checklist = page.getByRole('region', { name: 'AI review checklist' })
+  await expect(checklist).toContainText('Deadlines and Important Information / Sample Announcement / body_html')
+  await checklist.getByRole('button', { name: 'Open story', exact: true }).click()
+  const opened = page.getByRole('dialog', { name: 'Edit story', exact: true })
+  await expect(opened.getByLabel('Title *', { exact: true })).toHaveValue('Sample Announcement')
+  await opened.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(opened).toHaveCount(0)
+  await checklist.getByRole('button', { name: 'Close checklist', exact: true }).click()
+  await expect(checklist).toHaveCount(0)
 
   await page
     .getByRole('button', {

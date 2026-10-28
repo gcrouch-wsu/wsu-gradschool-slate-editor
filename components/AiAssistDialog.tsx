@@ -50,7 +50,7 @@ export default function AiAssistDialog({
   onHouseStyle: (value: boolean) => void
   onGenerate: () => void
   onApply: (suggestion: TextSuggestion) => void
-  onApplyFinding: (finding: ReviewFinding) => void
+  onApplyFinding: (finding: ReviewFinding, index: number) => void
   onDiscard: () => void
 }) {
   const titleId = useId()
@@ -160,7 +160,9 @@ export default function AiAssistDialog({
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              className={`${button} border-wsu-crimson bg-wsu-crimson text-white`}
+              className={`${button} border-wsu-crimson ${
+                suggestions.length || findings.length ? 'bg-white text-wsu-crimson' : 'bg-wsu-crimson text-white'
+              }`}
               disabled={busy}
               onClick={() => {
                 chosen.current.clear()
@@ -240,12 +242,15 @@ export default function AiAssistDialog({
                     disabled={busy}
                     className={`${button} mt-2 border-wsu-crimson bg-white text-wsu-crimson`}
                     onClick={() =>
-                      onApplyFinding({
-                        ...finding,
-                        proposed:
-                          chosen.current.get(JSON.stringify([finding.originalText, finding.proposed, index])) ??
-                          finding.proposed,
-                      })
+                      onApplyFinding(
+                        {
+                          ...finding,
+                          proposed:
+                            chosen.current.get(JSON.stringify([finding.originalText, finding.proposed, index])) ??
+                            finding.proposed,
+                        },
+                        index,
+                      )
                     }
                   >
                     Apply suggestion
@@ -258,7 +263,7 @@ export default function AiAssistDialog({
         <footer className="shrink-0 border-t border-wsu-border-light bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button type="button" className={`${button} border-wsu-border-light bg-white`} onClick={onDiscard}>
-              Discard
+              {action === 'review' ? 'Close' : 'Discard'}
             </button>
             {suggestions.length === 1 && (
               <div className="flex flex-wrap items-center gap-3">
@@ -281,7 +286,10 @@ export default function AiAssistDialog({
               </div>
             )}
             {(suggestions.length > 1 || findings.length > 0) && (
-              <p className="text-sm">Apply a suggestion above. Unreviewed edits in it will also be included.</p>
+              <p className="text-sm">
+                Apply a suggestion above. Unreviewed edits in it will also be included.
+                {findings.length > 0 ? ' The review stays available as a checklist after you close or apply.' : ''}
+              </p>
             )}
           </div>
         </footer>

@@ -7,6 +7,7 @@ import EditorPanel from '@/components/EditorPanel'
 import PreviewPanel from '@/components/PreviewPanel'
 import AiAssistDialog from '@/components/AiAssistDialog'
 import ConfirmModal from '@/components/ConfirmModal'
+import VersionHistory from '@/components/VersionHistory'
 import { useNewsletterState } from '@/app/hooks/useNewsletterState'
 import { usePreview } from '@/app/hooks/usePreview'
 import type { AiAction } from '@/lib/ai/instructions'
@@ -25,6 +26,7 @@ import { baselineAfterSave, differsFromSent } from '@/lib/sent-baseline'
 import { beginLeaseRequest, clearTabLease, currentLeaseToken, rememberLease } from '@/lib/client/tab-lease'
 import { SerializedSaver, type SaveResponse, type SaveStatus } from '@/lib/client/save-queue'
 import { errorMessage, jsonBody, RequestError, requestJson } from '@/lib/client/request'
+import { storyForFinding, storyForIssue, type StoryLocation } from '@/lib/client/locate-story'
 import type { NewsletterData, NewsletterProgress, ValidationIssue, ValidationResult } from '@/types/newsletter'
 
 interface Props {
@@ -123,12 +125,21 @@ export default function SharedNewsletterEditor({
   const [recovery, setRecovery] = useState<NewsletterData | null>(null)
   const [staleRecovery, setStaleRecovery] = useState(false)
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null)
+  const [issuesStale, setIssuesStale] = useState(false)
+  const [reviewChecklist, setReviewChecklist] = useState<{ findings: ReviewFinding[]; applied: number[] } | null>(
+    null,
+  )
+  const [storyRequest, setStoryRequest] = useState<(StoryLocation & { nonce: number }) | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [holder, setHolder] = useState<{ name: string; self: boolean } | null>(null)
+  const lastTyping = useRef<{ target: Element | null; at: number }>({ target: null, at: 0 })
   const [mobileView, setMobileView] = useState<'edit' | 'preview'>('edit')
   const saverRef = useRef<SerializedSaver | null>(null)
   const versionRef = useRef(initialVersion)
   const lastNoted = useRef(JSON.stringify(initialContent))
   const mounted = useRef(false)
-  const { html, loading, updatePreview } = usePreview()
+  const { html, loading, error: previewError, updatePreview, debouncedUpdatePreview } = usePreview()
+  const previewed = useRef(false)
   const backupKey = `wsu_newsletter_backup:${userId}:${newsletterId}`
 
   useEffect(() => {
@@ -141,8 +152,11 @@ export default function SharedNewsletterEditor({
     stateRef.current = state
   }, [state])
   useEffect(() => {
-    void updatePreview(state)
-  }, [state, updatePreview])
+    // Render the first preview at once; later edits wait for a pause in typing.
+    if (previewed.current) debouncedUpdatePreview(state)
+    else void updatePreview(state)
+    previewed.current = true
+  }, [state, updatePreview, debouncedUpdatePreview])
   useEffect(() => {
     if (!hasSentRecord || sentBaseline.current === null) return
     setChangedSinceSent(canonicalJson(state) !== sentBaseline.current)
@@ -266,6 +280,7 @@ export default function SharedNewsletterEditor({
       resetState(lease.content)
       setCanWrite(true)
       setBanner('idle')
+      setHolder(null)
       setStatus('saved')
       if (lease.summary) {
         setProgress(lease.summary.progress)
@@ -285,6 +300,18 @@ export default function SharedNewsletterEditor({
     [newsletterId, sendSave, onSaveStatus, resetState, readRecovery],
   )
 
+  const loadHolder = useCallback(async () => {
+    try {
+      const body = await requestJson<{
+        summary: { leaseHeld: boolean; leaseHolderName: string | null; leaseHolderUserId: string | null }
+      }>(`/api/newsletters/${newsletterId}`)
+      const { leaseHeld, leaseHolderName, leaseHolderUserId } = body.summary
+      if (mounted.current)
+        setHolder(leaseHeld && leaseHolderName ? { name: leaseHolderName, self: leaseHolderUserId === userId } : null)
+    } catch {
+      /* The banner falls back to the general view-only explanation. */
+    }
+  }, [newsletterId, userId])
   useEffect(() => {
     let stopped = false
     beginLeaseRequest(newsletterId, async () => {
@@ -308,13 +335,15 @@ export default function SharedNewsletterEditor({
       .catch((failure) => {
         if (stopped) return
         setCanWrite(false)
-        setBanner(failure instanceof RequestError && failure.status === 401 ? 'session_expired' : 'view_only')
+        const expired = failure instanceof RequestError && failure.status === 401
+        setBanner(expired ? 'session_expired' : 'view_only')
         setError(errorMessage(failure))
+        if (!expired) void loadHolder()
       })
     return () => {
       stopped = true
     }
-  }, [newsletterId, adopt])
+  }, [newsletterId, adopt, loadHolder])
 
   const noteSnapshot = useCallback(
     (snapshot: NewsletterData) => {
@@ -324,7 +353,7 @@ export default function SharedNewsletterEditor({
       saverRef.current?.note(snapshot)
       backup(snapshot, versionRef.current)
       setNotice('')
-      setIssues(null)
+      setIssuesStale(true)
     },
     [backup],
   )
@@ -337,11 +366,34 @@ export default function SharedNewsletterEditor({
       if (!canWrite || operationRef.current || pendingProgress.current) return
       const next = updater(stateRef.current)
       stateRef.current = next
-      updateState(() => next, pushHistory)
+      // Continuous typing in one field becomes one Undo step, as in a document editor.
+      const active = window.document.activeElement
+      const typing =
+        active instanceof HTMLElement &&
+        (active.isContentEditable ||
+          active instanceof HTMLTextAreaElement ||
+          (active instanceof HTMLInputElement && !['checkbox', 'radio', 'button', 'submit'].includes(active.type)))
+      const now = Date.now()
+      const coalesce =
+        pushHistory && typing && lastTyping.current.target === active && now - lastTyping.current.at < 1000
+      lastTyping.current = typing ? { target: active, at: now } : { target: null, at: 0 }
+      updateState(() => next, pushHistory && !coalesce)
       noteSnapshot(next)
     },
     [canWrite, updateState, noteSnapshot],
   )
+  const undoEdit = useCallback(() => {
+    lastTyping.current = { target: null, at: 0 }
+    undo()
+  }, [undo])
+  const redoEdit = useCallback(() => {
+    lastTyping.current = { target: null, at: 0 }
+    redo()
+  }, [redo])
+  const openStory = useCallback((location: StoryLocation) => {
+    setMobileView('edit')
+    setStoryRequest({ ...location, nonce: Date.now() })
+  }, [])
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -367,9 +419,11 @@ export default function SharedNewsletterEditor({
       } catch (failure) {
         if (stopped) return
         setCanWrite(false)
-        setBanner(failure instanceof RequestError && failure.status === 401 ? 'session_expired' : 'lease_lost')
+        const expired = failure instanceof RequestError && failure.status === 401
+        setBanner(expired ? 'session_expired' : 'lease_lost')
         setError(errorMessage(failure))
         rememberLease(newsletterId, null)
+        if (!expired) void loadHolder()
       }
     }
     const configured = Number(process.env.NEXT_PUBLIC_LEASE_RENEW_MS || 60000)
@@ -382,7 +436,7 @@ export default function SharedNewsletterEditor({
       clearInterval(timer)
       clearInterval(heartbeat)
     }
-  }, [canWrite, newsletterId])
+  }, [canWrite, newsletterId, loadHolder])
 
   async function operation(label: string, action: () => Promise<void>) {
     if (operationRef.current) return
@@ -476,6 +530,7 @@ export default function SharedNewsletterEditor({
     await operation('Checking accessibility…', async () => {
       const result = await requestJson<ValidationResult>('/api/validate', jsonBody(stateRef.current))
       setIssues(result.issues || [])
+      setIssuesStale(false)
     })
   }
   async function exportHtml() {
@@ -487,7 +542,10 @@ export default function SharedNewsletterEditor({
       )
       if (!response.ok) {
         const body = await response.json().catch(() => null)
-        if (body?.issues) setIssues(body.issues)
+        if (body?.issues) {
+          setIssues(body.issues)
+          setIssuesStale(false)
+        }
         throw new Error(body?.error || 'HTML could not be exported. Please retry.')
       }
       const blob = await response.blob()
@@ -657,6 +715,7 @@ export default function SharedNewsletterEditor({
       setAiModel(result.model)
       if (aiAction === 'review') {
         setAiFindings(result.suggestion as ReviewFinding[])
+        setReviewChecklist({ findings: result.suggestion as ReviewFinding[], applied: [] })
         setAiSuggestions([])
       } else {
         const suggestion = result.suggestion as TextSuggestion | TextSuggestion[]
@@ -690,7 +749,7 @@ export default function SharedNewsletterEditor({
     onEdit((prev) => applyFieldChange(prev, base.target, suggestion.proposed))
     closeAi()
   }
-  async function applyFinding(finding: ReviewFinding) {
+  async function applyFinding(finding: ReviewFinding, index: number) {
     const base = aiBase.current
     if (!base || !finding.proposed) return
     const target: AiTarget = {
@@ -716,7 +775,9 @@ export default function SharedNewsletterEditor({
     }
     if (!(await validateAiApplication({ ...base, target }))) return
     onEdit((prev) => applyFieldChange(prev, target, finding.proposed || ''))
+    setReviewChecklist((current) => (current ? { ...current, applied: [...current.applied, index] } : current))
     closeAi()
+    setNotice('Suggestion applied. The review checklist stays below; generate the review again to apply other wording.')
   }
   async function validateAiApplication(base: ProposalBase): Promise<boolean> {
     if (aiRequest.current || operationRef.current || pendingProgress.current) return false
@@ -818,7 +879,7 @@ export default function SharedNewsletterEditor({
     banner === 'connecting'
       ? 'Checking editing access…'
       : banner === 'deleted'
-        ? 'This draft was deleted.'
+        ? 'This draft was archived.'
         : banner === 'release_pending'
           ? 'Saved; editing lease release pending'
           : banner === 'session_expired'
@@ -833,83 +894,98 @@ export default function SharedNewsletterEditor({
                     ? 'Saved'
                     : 'View only'
 
+  const errorCount = issues?.filter((issue) => issue.severity === 'error').length ?? 0
+  const warningCount = (issues?.length ?? 0) - errorCount
+  const viewOnlyMessage = holder?.self
+    ? 'You have this draft open in another tab, or in a tab that closed without finishing. Take over editing to continue here; the other tab will stop saving.'
+    : holder
+      ? `${holder.name} is editing this draft. Taking over editing stops their session from saving; their unsaved changes stay in their browser.`
+      : 'This draft is view only. Taking over editing stops the other editing session from saving.'
+
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="flex flex-col gap-4 px-4 py-3 bg-white border-b lg:flex-row lg:justify-between lg:items-start">
-        <div className="min-w-0">
-          <Link
-            className="inline-flex min-h-11 items-center font-semibold text-wsu-crimson underline"
-            href="/newsletters"
-            onNavigate={(event) => {
-              event.preventDefault()
-              leave()
-            }}
-          >
-            All newsletters
-          </Link>
+      <header className="flex flex-col gap-2 px-4 py-3 bg-white border-b">
+        <Link
+          className="inline-flex min-h-11 items-center self-start font-semibold text-wsu-crimson underline"
+          href="/newsletters"
+          onNavigate={(event) => {
+            event.preventDefault()
+            leave()
+          }}
+        >
+          All newsletters
+        </Link>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h1 className="text-xl font-semibold break-words">
             {state.issue?.title || state.masthead.title || 'Newsletter'}
           </h1>
-          <p className="text-sm">
-            <span className="font-semibold">{progressLabels[progress]}</span>
-            {state.issue?.title ? ` · ${state.masthead.title}` : ''}
-            {changedSinceSent ? ' · Changed since sent' : ''}
-          </p>
+          <span className="rounded-full border border-wsu-crimson px-3 py-0.5 text-sm font-semibold text-wsu-crimson">
+            {progressLabels[progress]}
+          </span>
+          {changedSinceSent && (
+            <span className="rounded-full border border-amber-700 bg-amber-50 px-3 py-0.5 text-sm font-semibold text-amber-900">
+              Changed since sent
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-wsu-text-muted">
+          {state.issue?.title ? state.masthead.title : ''}
           {hasSentRecord && (
-            <p className="text-sm">
+            <>
+              {state.issue?.title ? ' · ' : ''}
               <Link className="font-semibold text-wsu-crimson underline" href={`/newsletters/${newsletterId}/sent`}>
                 Open sent version
               </Link>
-            </p>
+            </>
           )}
-          <details className="mt-2">
-            <summary className="inline-flex min-h-11 cursor-pointer items-center font-semibold text-wsu-crimson">
-              Change progress
-            </summary>
-            <div className="mt-1 flex flex-wrap gap-2">
-              <button
-                className={secondary}
-                type="button"
-                disabled={!canWrite || busy !== null || progress === 'ready'}
-                onClick={() => void changeProgress('ready')}
-              >
-                Mark ready for Slate
-              </button>
-              <button
-                className={secondary}
-                type="button"
-                disabled={!canWrite || busy !== null || progress === 'draft'}
-                onClick={() => void changeProgress('draft')}
-              >
-                Return to draft
-              </button>
-              <button
-                className={secondary}
-                type="button"
-                disabled={!canWrite || busy !== null}
-                onClick={() => setSentPrompt(true)}
-              >
-                Mark as sent via Slate
-              </button>
-            </div>
-          </details>
-          <p className="text-sm text-wsu-text-muted">
-            Changes save automatically. Finish editing to make this draft available to the next person. Ready for Slate
-            is a review choice, not a completed check. Copying or exporting HTML does not mark this as sent.
+        </p>
+        <details>
+          <summary className="inline-flex min-h-11 cursor-pointer items-center font-semibold text-wsu-crimson">
+            Change progress
+          </summary>
+          <p className="mt-1 text-sm text-wsu-text-muted">
+            Ready for Slate is a review choice, not a completed check. Exporting or copying HTML does not mark the
+            newsletter as sent.
           </p>
-        </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              className={secondary}
+              type="button"
+              disabled={!canWrite || busy !== null || progress === 'ready'}
+              onClick={() => void changeProgress('ready')}
+            >
+              Mark ready for Slate
+            </button>
+            <button
+              className={secondary}
+              type="button"
+              disabled={!canWrite || busy !== null || progress === 'draft'}
+              onClick={() => void changeProgress('draft')}
+            >
+              Return to draft
+            </button>
+            <button
+              className={secondary}
+              type="button"
+              disabled={!canWrite || busy !== null}
+              onClick={() => setSentPrompt(true)}
+            >
+              Mark as sent via Slate
+            </button>
+          </div>
+        </details>
       </header>
       <div
         aria-label="Draft actions"
         className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-wsu-border-light bg-white px-4 py-2 shadow-sm"
       >
-        <span role="status" aria-live="polite" data-testid="save-status" className="w-full text-sm font-medium">
+        <span role="status" aria-live="polite" data-testid="save-status" className="mr-auto text-sm font-medium">
           {statusLabel}
         </span>
         <button
           className={secondary}
           type="button"
-          onClick={undo}
+          onClick={undoEdit}
           disabled={!canUndo || !canWrite || busy !== null || progressPending}
         >
           Undo
@@ -917,7 +993,7 @@ export default function SharedNewsletterEditor({
         <button
           className={secondary}
           type="button"
-          onClick={redo}
+          onClick={redoEdit}
           disabled={!canRedo || !canWrite || busy !== null || progressPending}
         >
           Redo
@@ -946,23 +1022,42 @@ export default function SharedNewsletterEditor({
             Retry lease release
           </button>
         )}
-        <button
-          className={secondary}
-          type="button"
-          disabled={busy !== null || banner === 'connecting' || banner === 'deleted'}
-          onClick={() => void checkAccessibility()}
-        >
-          Check accessibility
-        </button>
-        <button
-          className={secondary}
-          type="button"
-          disabled={busy !== null || banner === 'connecting' || banner === 'deleted' || banner === 'session_expired'}
-          onClick={() => void exportHtml()}
-        >
-          Export HTML
-        </button>
       </div>
+      <section aria-labelledby="review-export-heading" className="border-b border-wsu-border-light bg-white px-4 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 id="review-export-heading" className="mr-2 text-sm font-semibold">
+            Review and export
+          </h2>
+          <button
+            className={secondary}
+            type="button"
+            disabled={busy !== null || banner === 'connecting' || banner === 'deleted'}
+            onClick={() => void checkAccessibility()}
+          >
+            Check accessibility
+          </button>
+          <button
+            className={secondary}
+            type="button"
+            disabled={banner === 'connecting' || banner === 'deleted'}
+            onClick={() => setHistoryOpen(true)}
+          >
+            Version history
+          </button>
+          <button
+            className={secondary}
+            type="button"
+            disabled={busy !== null || banner === 'connecting' || banner === 'deleted' || banner === 'session_expired'}
+            onClick={() => void exportHtml()}
+          >
+            Export HTML
+          </button>
+        </div>
+        <p className="mt-1 text-xs text-wsu-text-muted">
+          Check accessibility, review the preview at both widths, mark the draft ready, export the HTML, test it in
+          Slate, then mark it as sent.
+        </p>
+      </section>
       <div className="px-4 space-y-2">
         {progressPending && !busy && (
           <div role="alert" className="py-2">
@@ -998,9 +1093,9 @@ export default function SharedNewsletterEditor({
             )}
           </div>
         )}
-        {banner === 'view_only' && (
-          <p className="py-2 text-sm">
-            This draft is view only. Taking over editing stops the other editing session from saving.
+        {(banner === 'view_only' || (banner === 'lease_lost' && holder)) && (
+          <p className="py-2 text-sm" data-testid="holder-message">
+            {viewOnlyMessage}
           </p>
         )}
         {staleRecovery && (
@@ -1025,26 +1120,107 @@ export default function SharedNewsletterEditor({
           </div>
         )}
         {issues && (
-          <section aria-label="Accessibility results" className="border rounded p-4 my-3 bg-white">
-            <h2 className="font-semibold">Accessibility results</h2>
+          <section aria-labelledby="accessibility-results" className="border rounded p-4 my-3 bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 id="accessibility-results" className="font-semibold">
+                Accessibility results
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className={secondary}
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => void checkAccessibility()}
+                >
+                  Check again
+                </button>
+                <button className={secondary} type="button" onClick={() => setIssues(null)}>
+                  Close results
+                </button>
+              </div>
+            </div>
+            {issuesStale && (
+              <p className="mt-2 text-sm font-semibold text-amber-900">
+                The draft changed after this check. These results may be out of date; check again to update them.
+              </p>
+            )}
             {issues.length === 0 ? (
-              <p>No issues found by the automated content checks.</p>
+              <p className="mt-2">No issues found by the automated content checks.</p>
             ) : (
-              <ul className="list-disc pl-5 space-y-2">
-                {issues.map((issue, index) => (
-                  <li key={index}>
-                    <strong>
-                      {issue.severity === 'error' ? 'Fix before exporting' : 'Review'}: {issue.location}
-                    </strong>{' '}
-                    — {issue.message} {issue.fix}
-                  </li>
-                ))}
-              </ul>
+              <>
+                <p className="mt-2 text-sm">
+                  {errorCount} to fix before exporting; {warningCount} to review.
+                </p>
+                <ul className="mt-2 list-disc pl-5 space-y-2">
+                  {issues.map((issue, index) => {
+                    const story = storyForIssue(state, issue.location)
+                    return (
+                      <li key={index}>
+                        <strong>
+                          {issue.severity === 'error' ? 'Fix before exporting' : 'Review'}: {issue.location}
+                        </strong>{' '}
+                        — {issue.message} {issue.fix}
+                        {story && (
+                          <>
+                            {' '}
+                            <button
+                              type="button"
+                              className="font-semibold text-wsu-crimson underline"
+                              onClick={() => openStory(story)}
+                            >
+                              Open story
+                            </button>
+                          </>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </>
             )}
             <p className="text-sm mt-2">
               Automated checks do not assess the accuracy of image descriptions or every email client. Review your
               content and the rendered message before sending.
             </p>
+          </section>
+        )}
+        {reviewChecklist && !aiOpen && reviewChecklist.findings.length > 0 && (
+          <section aria-labelledby="review-checklist" className="border rounded p-4 my-3 bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 id="review-checklist" className="font-semibold">
+                AI review checklist
+              </h2>
+              <button className={secondary} type="button" onClick={() => setReviewChecklist(null)}>
+                Close checklist
+              </button>
+            </div>
+            <p className="mt-1 text-sm text-wsu-text-muted">
+              Findings from the last newsletter review. Suggested wording can be applied only from a current review;
+              after any edit, choose Review newsletter again.
+            </p>
+            <ul className="mt-2 space-y-2">
+              {reviewChecklist.findings.map((finding, index) => {
+                const story = storyForFinding(state, finding)
+                return (
+                  <li key={index} className="rounded-md border border-wsu-border-light p-3 text-sm">
+                    <p className="font-semibold">
+                      {finding.sectionTitle} / {finding.cardTitle} / {finding.field}
+                      {reviewChecklist.applied.includes(index) ? ' · Applied' : ''}
+                    </p>
+                    <p>{finding.summary}</p>
+                    {story && (
+                      <button
+                        type="button"
+                        className="mt-1 font-semibold text-wsu-crimson underline"
+                        onClick={() => openStory(story)}
+                      >
+                        Open story
+                      </button>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
           </section>
         )}
       </div>
@@ -1079,12 +1255,26 @@ export default function SharedNewsletterEditor({
             onAssist={openCardAssist}
             onSuggestPreheader={openPreheaderAssist}
             onReview={openReview}
+            issueFirst
+            storyRequest={storyRequest}
           />
         </div>
         <div className={`min-w-0 ${mobileView === 'preview' ? '' : 'hidden lg:block'}`}>
-          <PreviewPanel html={html} loading={loading} onRefresh={() => void updatePreview(state)} />
+          <PreviewPanel html={html} loading={loading} error={previewError} onRefresh={() => void updatePreview(state)} />
         </div>
       </main>
+      {historyOpen && (
+        <VersionHistory
+          newsletterId={newsletterId}
+          canRestore={canWrite && busy === null && !progressPending}
+          onClose={() => setHistoryOpen(false)}
+          onRestore={(content) => {
+            onEdit(() => content)
+            setHistoryOpen(false)
+            setNotice('The selected version was restored into the draft. Use Undo to return to the previous content.')
+          }}
+        />
+      )}
       <ConfirmModal
         isOpen={leavePrompt}
         title="Leave with changes not saved?"

@@ -613,7 +613,7 @@ export default function EditorPage() {
                   ✓ No Issues Found
                 </h3>
                 <p className="text-wsu-text-muted">
-                  Your newsletter passes all accessibility checks!
+                  The automated checks found no issues. Review the content and the rendered message before sending.
                 </p>
               </div>
             )}

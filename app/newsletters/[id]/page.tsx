@@ -116,8 +116,8 @@ function DraftLoader({ newsletterId }: { newsletterId: string }) {
       </Link>
       {deleted ? (
         <>
-          <h1 className="text-2xl font-semibold">This draft was deleted.</h1>
-          <p>It is archived. Its saved content and revision history are kept.</p>
+          <h1 className="text-2xl font-semibold">This draft is archived.</h1>
+          <p>Its saved content and revision history are kept. Restore it to continue editing.</p>
           <button
             type="button"
             disabled={restoring}

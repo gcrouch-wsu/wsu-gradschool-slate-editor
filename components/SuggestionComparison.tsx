@@ -49,6 +49,7 @@ function Comparison({
   const passages = useMemo(() => comparisonPassages(views.changes), [views])
   const accepted = edits.filter((edit) => decisions[edit.id] === 'accept').length
   const passed = edits.filter((edit) => decisions[edit.id] === 'pass').length
+  const unreviewed = edits.filter((edit) => !decisions[edit.id])
   useEffect(() => {
     onResolve?.(resolvedField(original, proposed, decisions, plain))
   }, [decisions, onResolve, original, plain, proposed])
@@ -70,6 +71,25 @@ function Comparison({
       const panel = document.getElementById(`${prefix}-${id}-choices`)
       panel?.focus({ preventScroll: true })
       panel?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
+  }
+  function nextUnreviewed() {
+    const after = edits.findIndex((edit) => edit.id === active)
+    const next = unreviewed.find((edit) => edits.indexOf(edit) > after) ?? unreviewed[0]
+    if (!next) return
+    if (view === 'changes') openEdit(next.id)
+    else
+      requestAnimationFrame(() => {
+        const panel = document.getElementById(`${prefix}-${next.id}-choices`)
+        panel?.focus({ preventScroll: true })
+        panel?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      })
+  }
+  function decideRemaining(decision: EditDecision) {
+    setDecisions((current) => {
+      const next = { ...current }
+      for (const edit of edits) next[edit.id] ??= decision
+      return next
     })
   }
   function closeEdit() {
@@ -121,6 +141,34 @@ function Comparison({
         {accepted} accepted; {passed} passed; {edits.length - accepted - passed} unreviewed. Unreviewed edits will also
         be included when you apply.
       </p>
+      {edits.length > 1 && (
+        <div className="mb-2 flex flex-wrap gap-2" role="group" aria-label="Review all edits">
+          <button
+            type="button"
+            className={`${button} border-wsu-border-light bg-white`}
+            disabled={unreviewed.length === 0}
+            onClick={nextUnreviewed}
+          >
+            Next unreviewed edit
+          </button>
+          <button
+            type="button"
+            className={`${button} border-wsu-border-light bg-white`}
+            disabled={unreviewed.length === 0}
+            onClick={() => decideRemaining('accept')}
+          >
+            Accept all remaining
+          </button>
+          <button
+            type="button"
+            className={`${button} border-wsu-border-light bg-white`}
+            disabled={unreviewed.length === 0}
+            onClick={() => decideRemaining('pass')}
+          >
+            Pass all remaining
+          </button>
+        </div>
+      )}
       {view === 'changes' && (
         <p id={`${prefix}-legend`} className="mb-3 text-sm">
           <del className="bg-red-100 line-through">Removed</del> text is struck out.{' '}

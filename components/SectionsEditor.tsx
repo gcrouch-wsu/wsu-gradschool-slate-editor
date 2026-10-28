@@ -27,10 +27,19 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
+const storyTypeNames: Record<Card['type'], string> = {
+  standard: 'Standard story',
+  event: 'Event',
+  resource: 'Resource',
+  cta: 'Call to action',
+  letter: 'Letter',
+}
+
 interface SectionsEditorProps {
   state: NewsletterData
   updateState: (updater: (prev: NewsletterData) => NewsletterData, pushHistory?: boolean) => void
   onAssist?: (sectionIndex: number, cardIndex: number) => void
+  storyRequest?: { sectionIndex: number; cardIndex: number; nonce: number } | null
 }
 
 function ReorderButtons({
@@ -158,7 +167,7 @@ function SortableCardItem({
   onRemove: (sectionIndex: number, cardIndex: number) => void
   onAssist?: (sectionIndex: number, cardIndex: number) => void
 }) {
-  const label = ('title' in card && card.title?.trim()) || `card ${cardIndex + 1}`
+  const label = ('title' in card && card.title?.trim()) || `story ${cardIndex + 1}`
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `card-${sectionIndex}-${cardIndex}`,
   })
@@ -189,9 +198,9 @@ function SortableCardItem({
         <FileText className="w-5 h-5 text-wsu-text-muted flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-wsu-text-dark break-words">
-            {'title' in card && card.title ? card.title : `Card ${cardIndex + 1} (${card.type})`}
+            {'title' in card && card.title ? card.title : `Story ${cardIndex + 1}`}
           </div>
-          <div className="text-xs text-wsu-text-muted">{card.type}</div>
+          <div className="text-xs text-wsu-text-muted">{storyTypeNames[card.type]}</div>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-1">
@@ -209,7 +218,7 @@ function SortableCardItem({
           }}
           className="inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-wsu-crimson hover:text-wsu-crimson-dark"
           aria-label={`Edit ${label}`}
-          title="Edit card"
+          title="Edit story"
         >
           <Edit2 className="mr-1 w-4 h-4" />
           <span className="text-sm">Edit</span>
@@ -235,7 +244,7 @@ function SortableCardItem({
           }}
           className="ml-2 inline-flex min-h-11 min-w-11 items-center justify-center border-l border-wsu-border-light text-red-600 hover:text-red-700"
           aria-label={`Remove ${label}`}
-          title="Remove card"
+          title="Remove story"
         >
           <Trash2 className="w-4 h-4" />
         </button>
@@ -335,17 +344,20 @@ function SortableClosureItem({
   )
 }
 
-export default function SectionsEditor({ state, updateState, onAssist }: SectionsEditorProps) {
+export default function SectionsEditor({ state, updateState, onAssist, storyRequest = null }: SectionsEditorProps) {
   const sections = state.sections || []
+  const [handledRequest, setHandledRequest] = useState(storyRequest)
   const [editingCard, setEditingCard] = useState<{
     sectionIndex: number
     cardIndex: number
     card: Card
+    isNew: boolean
   } | null>(null)
   const [editingClosure, setEditingClosure] = useState<{
     sectionIndex: number
     closureIndex: number
     closure: Closure
+    isNew: boolean
   } | null>(null)
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean
@@ -359,6 +371,20 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
     message: '',
     onConfirm: () => {},
   })
+  if (storyRequest !== handledRequest) {
+    // Check results and AI review findings can open the story they refer to.
+    setHandledRequest(storyRequest)
+    const requested = storyRequest && sections[storyRequest.sectionIndex]?.cards?.[storyRequest.cardIndex]
+    if (storyRequest && requested) {
+      setEditingClosure(null)
+      setEditingCard({
+        sectionIndex: storyRequest.sectionIndex,
+        cardIndex: storyRequest.cardIndex,
+        card: requested,
+        isNew: false,
+      })
+    }
+  }
   const [promptModal, setPromptModal] = useState<{
     isOpen: boolean
     title: string
@@ -426,8 +452,8 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
   const removeSection = (index: number) => {
     setConfirmModal({
       isOpen: true,
-      title: 'Remove Section',
-      message: 'Are you sure you want to remove this entire section? This action cannot be undone.',
+      title: 'Remove section',
+      message: 'Remove this entire section from the newsletter? You can use Undo to restore it.',
       variant: 'danger',
       onConfirm: () => {
         updateState(
@@ -520,6 +546,26 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
     })
   }
 
+  // Copy the section and its lists so the previous document stays intact for Undo.
+  const changeCards = (sectionIndex: number, change: (cards: Card[]) => Card[]) => {
+    updateState((prev) => {
+      const section = prev.sections[sectionIndex]
+      if (!section) return prev
+      const sections = [...prev.sections]
+      sections[sectionIndex] = { ...section, cards: change([...(section.cards ?? [])]) }
+      return { ...prev, sections }
+    }, true)
+  }
+  const changeClosures = (sectionIndex: number, change: (closures: Closure[]) => Closure[]) => {
+    updateState((prev) => {
+      const section = prev.sections[sectionIndex]
+      if (!section) return prev
+      const sections = [...prev.sections]
+      sections[sectionIndex] = { ...section, closures: change([...(section.closures ?? [])]) }
+      return { ...prev, sections }
+    }, true)
+  }
+
   const addCard = (sectionIndex: number, cardType: Card['type']) => {
     const newCard: Card = (() => {
       switch (cardType) {
@@ -571,25 +617,12 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
       }
     })()
 
-    // Get current card count before adding
-    const section = sections[sectionIndex]
-    const cardIndex = section.cards?.length || 0
-
-    updateState((prev) => {
-      const newSections = [...prev.sections]
-      const section = newSections[sectionIndex]
-      if (!section.cards) {
-        section.cards = []
-      }
-      section.cards.push(newCard)
-      return { ...prev, sections: newSections }
-    }, true)
-
-    // Open editor for the new card
+    // A new story enters the draft only when it is saved.
     setEditingCard({
       sectionIndex,
-      cardIndex,
+      cardIndex: sections[sectionIndex]?.cards?.length ?? 0,
       card: newCard,
+      isNew: true,
     })
   }
 
@@ -597,86 +630,48 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
     const section = sections[sectionIndex]
     const card = section.cards?.[cardIndex]
     if (card) {
-      setEditingCard({ sectionIndex, cardIndex, card })
+      setEditingCard({ sectionIndex, cardIndex, card, isNew: false })
     }
   }
 
   const saveCard = (card: Card) => {
     if (!editingCard) return
-
-    updateState((prev) => {
-      const newSections = [...prev.sections]
-      const section = newSections[editingCard.sectionIndex]
-      if (section.cards) {
-        section.cards[editingCard.cardIndex] = card
-      }
-      return { ...prev, sections: newSections }
-    }, true)
-
+    const { sectionIndex, cardIndex, isNew } = editingCard
+    changeCards(sectionIndex, (cards) => {
+      if (isNew) cards.push(card)
+      else cards[cardIndex] = card
+      return cards
+    })
     setEditingCard(null)
   }
 
   const deleteCard = () => {
     if (!editingCard) return
-
-    updateState((prev) => {
-      const newSections = [...prev.sections]
-      const section = newSections[editingCard.sectionIndex]
-      if (section.cards) {
-        section.cards.splice(editingCard.cardIndex, 1)
-      }
-      return { ...prev, sections: newSections }
-    }, true)
-
+    const { sectionIndex, cardIndex, isNew } = editingCard
+    if (!isNew) changeCards(sectionIndex, (cards) => cards.filter((_, index) => index !== cardIndex))
     setEditingCard(null)
   }
 
   const removeCard = (sectionIndex: number, cardIndex: number) => {
     setConfirmModal({
       isOpen: true,
-      title: 'Remove Card',
-      message: 'Are you sure you want to remove this card? This action cannot be undone.',
+      title: 'Remove story',
+      message: 'Remove this story from the newsletter? You can use Undo to restore it.',
       variant: 'danger',
       onConfirm: () => {
-        updateState((prev) => {
-          const newSections = [...prev.sections]
-          const section = newSections[sectionIndex]
-          if (section.cards) {
-            section.cards.splice(cardIndex, 1)
-          }
-          return { ...prev, sections: newSections }
-        }, true)
+        changeCards(sectionIndex, (cards) => cards.filter((_, index) => index !== cardIndex))
         setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
       },
     })
   }
 
-  // Closure management functions
   const addClosure = (sectionIndex: number) => {
-    const newClosure: Closure = {
-      date: '',
-      reason: '',
-    }
-
-    // Get current closure count before adding
-    const section = sections[sectionIndex]
-    const closureIndex = section.closures?.length || 0
-
-    updateState((prev) => {
-      const newSections = [...prev.sections]
-      const section = newSections[sectionIndex]
-      if (!section.closures) {
-        section.closures = []
-      }
-      section.closures.push(newClosure)
-      return { ...prev, sections: newSections }
-    }, true)
-
-    // Open editor for the new closure
+    // A new closure enters the draft only when it is saved.
     setEditingClosure({
       sectionIndex,
-      closureIndex,
-      closure: newClosure,
+      closureIndex: sections[sectionIndex]?.closures?.length ?? 0,
+      closure: { date: '', reason: '' },
+      isNew: true,
     })
   }
 
@@ -684,55 +679,36 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
     const section = sections[sectionIndex]
     const closure = section.closures?.[closureIndex]
     if (closure) {
-      setEditingClosure({ sectionIndex, closureIndex, closure })
+      setEditingClosure({ sectionIndex, closureIndex, closure, isNew: false })
     }
   }
 
   const saveClosure = (closure: Closure) => {
     if (!editingClosure) return
-
-    updateState((prev) => {
-      const newSections = [...prev.sections]
-      const section = newSections[editingClosure.sectionIndex]
-      if (section.closures) {
-        section.closures[editingClosure.closureIndex] = closure
-      }
-      return { ...prev, sections: newSections }
-    }, true)
-
+    const { sectionIndex, closureIndex, isNew } = editingClosure
+    changeClosures(sectionIndex, (closures) => {
+      if (isNew) closures.push(closure)
+      else closures[closureIndex] = closure
+      return closures
+    })
     setEditingClosure(null)
   }
 
   const deleteClosure = () => {
     if (!editingClosure) return
-
-    updateState((prev) => {
-      const newSections = [...prev.sections]
-      const section = newSections[editingClosure.sectionIndex]
-      if (section.closures) {
-        section.closures.splice(editingClosure.closureIndex, 1)
-      }
-      return { ...prev, sections: newSections }
-    }, true)
-
+    const { sectionIndex, closureIndex, isNew } = editingClosure
+    if (!isNew) changeClosures(sectionIndex, (closures) => closures.filter((_, index) => index !== closureIndex))
     setEditingClosure(null)
   }
 
   const removeClosure = (sectionIndex: number, closureIndex: number) => {
     setConfirmModal({
       isOpen: true,
-      title: 'Remove Closure',
-      message: 'Are you sure you want to remove this closure? This action cannot be undone.',
+      title: 'Remove closure',
+      message: 'Remove this closure from the newsletter? You can use Undo to restore it.',
       variant: 'danger',
       onConfirm: () => {
-        updateState((prev) => {
-          const newSections = [...prev.sections]
-          const section = newSections[sectionIndex]
-          if (section.closures) {
-            section.closures.splice(closureIndex, 1)
-          }
-          return { ...prev, sections: newSections }
-        }, true)
+        changeClosures(sectionIndex, (closures) => closures.filter((_, index) => index !== closureIndex))
         setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
       },
     })
@@ -887,8 +863,14 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
               >
                 <div className="space-y-2">
                   <div>
-                    <label className="block text-xs font-medium text-wsu-text-dark mb-1">Section Title</label>
+                    <label
+                      className="block text-xs font-medium text-wsu-text-dark mb-1"
+                      htmlFor={`section-title-${sectionIndex}`}
+                    >
+                      Section title
+                    </label>
                     <input
+                      id={`section-title-${sectionIndex}`}
                       type="text"
                       value={section.title || ''}
                       onChange={(e) =>
@@ -962,7 +944,7 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
                   {/* Cards List - Draggable */}
                   {section.key !== 'closures' && section.cards && section.cards.length > 0 && (
                     <div className="mt-3">
-                      <div className="text-xs font-medium text-wsu-text-dark mb-2">Cards ({section.cards.length})</div>
+                      <div className="text-xs font-medium text-wsu-text-dark mb-2">Stories ({section.cards.length})</div>
                       <DndContext
                         id={`slate-cards-${sectionIndex}`}
                         sensors={sensors}
@@ -1000,7 +982,7 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
                   {/* Add Card Button - Only show for non-closures sections */}
                   {section.key !== 'closures' && (
                     <div className="mt-3">
-                      <div className="text-xs font-medium text-wsu-text-dark mb-2">Add Card</div>
+                      <div className="text-xs font-medium text-wsu-text-dark mb-2">Add a story</div>
                       <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => addCard(sectionIndex, 'standard')}
@@ -1024,7 +1006,7 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
                           onClick={() => addCard(sectionIndex, 'cta')}
                           className="inline-flex min-h-11 items-center justify-center px-3 py-2 text-sm font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
                         >
-                          CTA
+                          Call to action
                         </button>
                         <button
                           onClick={() => addCard(sectionIndex, 'letter')}
@@ -1054,9 +1036,10 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
       {editingCard && (
         <CardEditor
           card={editingCard.card}
+          isNew={editingCard.isNew}
           onSave={saveCard}
           onCancel={() => setEditingCard(null)}
-          onDelete={deleteCard}
+          onDelete={editingCard.isNew ? undefined : deleteCard}
         />
       )}
 
@@ -1064,9 +1047,10 @@ export default function SectionsEditor({ state, updateState, onAssist }: Section
       {editingClosure && (
         <ClosureEditor
           closure={editingClosure.closure}
+          isNew={editingClosure.isNew}
           onSave={saveClosure}
           onCancel={() => setEditingClosure(null)}
-          onDelete={deleteClosure}
+          onDelete={editingClosure.isNew ? undefined : deleteClosure}
         />
       )}
 

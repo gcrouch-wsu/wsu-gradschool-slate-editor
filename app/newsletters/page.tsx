@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ConfirmModal from '@/components/ConfirmModal'
+import IssueDialog from '@/components/IssueDialog'
 import { errorMessage, RequestError, requestJson, jsonBody } from '@/lib/client/request'
-import { formatIssueDate } from '@/lib/issue'
 import type { NewsletterProgress, TemplateType } from '@/types/newsletter'
 
 interface Summary {
@@ -65,7 +65,7 @@ export default function NewsletterLibraryPage() {
   const [pendingDelete, setPendingDelete] = useState<Summary | null>(null)
   const [pendingPurge, setPendingPurge] = useState<Summary | null>(null)
   const [duplicateTarget, setDuplicateTarget] = useState<Summary | null>(null)
-  const [duplicateTitle, setDuplicateTitle] = useState('')
+  const [createTemplate, setCreateTemplate] = useState<TemplateType | null>(null)
   const duplicateRequest = useRef<string | null>(null)
   const [lastDeleted, setLastDeleted] = useState<Summary | null>(null)
   const [notice, setNotice] = useState('')
@@ -128,12 +128,17 @@ export default function NewsletterLibraryPage() {
     setBusy(null)
   }
 
-  async function create(template: TemplateType) {
+  async function create(template: TemplateType, issue: { title: string; date: string }) {
     if (!begin(`Creating ${templateNames[template]}…`)) return
     try {
-      const body = await requestJson<{ id: string }>('/api/newsletters', jsonBody({ template }))
+      const body = await requestJson<{ id: string }>(
+        '/api/newsletters',
+        jsonBody({ template, issueTitle: issue.title, issueDate: issue.date }),
+      )
+      setCreateTemplate(null)
       routerRef.current.push(`/newsletters/${body.id}`)
     } catch (failure) {
+      setCreateTemplate(null)
       setError(`${errorMessage(failure)} Creation could not be confirmed; refresh the library before trying again.`)
     } finally {
       end()
@@ -151,14 +156,14 @@ export default function NewsletterLibraryPage() {
     }
   }
   async function confirmDelete() {
-    if (!pendingDelete || !begin('Deleting draft…')) return
+    if (!pendingDelete || !begin('Archiving draft…')) return
     const target = pendingDelete
     try {
       await requestJson(`/api/newsletters/${target.id}`, { method: 'DELETE' })
       ++requestSequence.current
       setNewsletters((current) => current.filter((item) => item.id !== target.id))
       setLastDeleted(target)
-      setNotice(`“${target.title}” was moved to Archived drafts. Its saved versions are retained.`)
+      setNotice(`“${target.title}” was archived. Its saved versions are retained.`)
     } catch (failure) {
       setRowError({
         id: target.id,
@@ -209,10 +214,9 @@ export default function NewsletterLibraryPage() {
   }
   function openDuplicate(target: Summary) {
     duplicateRequest.current = crypto.randomUUID()
-    setDuplicateTitle(formatIssueDate())
     setDuplicateTarget(target)
   }
-  async function confirmDuplicate() {
+  async function confirmDuplicate(issue: { title: string; date: string }) {
     if (!duplicateTarget || !duplicateRequest.current || !begin('Duplicating for the next issue…')) return
     const requestId = duplicateRequest.current
     try {
@@ -221,8 +225,8 @@ export default function NewsletterLibraryPage() {
         jsonBody({
           action: 'duplicate',
           requestId,
-          issueTitle: duplicateTitle,
-          issueDate: duplicateTitle,
+          issueTitle: issue.title,
+          issueDate: issue.date,
         }),
       )
       duplicateRequest.current = null
@@ -262,18 +266,23 @@ export default function NewsletterLibraryPage() {
         </div>
       </div>
       <div className="flex flex-wrap gap-3 mb-3" aria-label="Create a newsletter">
-        <button className={primaryButton} type="button" disabled={busy !== null} onClick={() => void create('ff')}>
+        <button className={primaryButton} type="button" disabled={busy !== null} onClick={() => setCreateTemplate('ff')}>
           New Friday Focus
         </button>
         <button
           className={primaryButton}
           type="button"
           disabled={busy !== null}
-          onClick={() => void create('briefing')}
+          onClick={() => setCreateTemplate('briefing')}
         >
           New Briefing
         </button>
-        <button className={primaryButton} type="button" disabled={busy !== null} onClick={() => void create('letter')}>
+        <button
+          className={primaryButton}
+          type="button"
+          disabled={busy !== null}
+          onClick={() => setCreateTemplate('letter')}
+        >
           New Slate Campaign
         </button>
         <label
@@ -392,7 +401,7 @@ export default function NewsletterLibraryPage() {
               className="underline font-semibold text-wsu-crimson ml-2"
               onClick={() => void restore(lastDeleted)}
             >
-              Undo delete
+              Undo archive
             </button>
           )}
         </div>
@@ -416,7 +425,7 @@ export default function NewsletterLibraryPage() {
           ) : (
             <p>
               {archived
-                ? 'No archived drafts. Deleted drafts appear here and can be restored. An administrator can permanently delete an archived draft, and that cannot be undone.'
+                ? 'No archived drafts. Archived drafts appear here and can be restored. An administrator can permanently delete an archived draft, and that cannot be undone.'
                 : 'No drafts yet. Choose New Friday Focus, New Briefing, New Slate Campaign, or Import HTML above.'}
             </p>
           )}
@@ -503,7 +512,7 @@ export default function NewsletterLibraryPage() {
                       aria-describedby={`title-${newsletter.id}`}
                       onClick={() => setPendingDelete(newsletter)}
                     >
-                      Delete
+                      Archive
                     </button>
                   )}
                 </div>
@@ -518,17 +527,17 @@ export default function NewsletterLibraryPage() {
       </ul>
       <ConfirmModal
         isOpen={pendingDelete !== null}
-        variant="danger"
-        title="Delete this draft?"
+        variant="warning"
+        title="Archive this draft?"
         message={
           pendingDelete
             ? `“${pendingDelete.title}” will move to Archived drafts. Its saved content and revision history are kept, and you can restore it. Unsaved changes in another tab are not included.`
             : ''
         }
-        confirmLabel="Delete draft"
+        confirmLabel="Archive draft"
         cancelLabel="Keep draft"
-        busy={busy === 'Deleting draft…'}
-        busyLabel="Deleting draft…"
+        busy={busy === 'Archiving draft…'}
+        busyLabel="Archiving draft…"
         onConfirm={() => void confirmDelete()}
         onCancel={() => {
           if (!busyRef.current) setPendingDelete(null)
@@ -552,49 +561,30 @@ export default function NewsletterLibraryPage() {
           if (!busyRef.current) setPendingPurge(null)
         }}
       />
+      {createTemplate && (
+        <IssueDialog
+          title={`New ${templateNames[createTemplate]}`}
+          description="Name this issue. You can change the title and date later in Masthead."
+          confirmLabel="Create draft"
+          busyLabel="Creating…"
+          busy={busy !== null}
+          onConfirm={(issue) => void create(createTemplate, issue)}
+          onCancel={() => setCreateTemplate(null)}
+        />
+      )}
       {duplicateTarget && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="duplicate-title"
-            className="w-full max-w-lg rounded-lg bg-white p-4"
-          >
-            <h2 id="duplicate-title" className="text-lg font-semibold">
-              Duplicate for next issue
-            </h2>
-            <p className="mt-2 text-sm">
-              Creates a new draft from “{duplicateTarget.title}”. Progress, editing holds, and sent records stay with the
-              original.
-            </p>
-            <label className="mt-3 block text-sm font-semibold" htmlFor="next-issue-title">
-              Issue title or date
-            </label>
-            <input
-              id="next-issue-title"
-              autoFocus
-              className="mt-1 min-h-11 w-full rounded-md border border-wsu-border-light px-3"
-              value={duplicateTitle}
-              onChange={(event) => setDuplicateTitle(event.target.value)}
-            />
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button className={primaryButton} type="button" disabled={busy !== null} onClick={() => void confirmDuplicate()}>
-                {busy === 'Duplicating for the next issue…' ? 'Duplicating…' : 'Create next issue'}
-              </button>
-              <button
-                className={secondaryButton}
-                type="button"
-                disabled={busy !== null}
-                onClick={() => {
-                  duplicateRequest.current = null
-                  setDuplicateTarget(null)
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <IssueDialog
+          title="Duplicate for next issue"
+          description={`Creates a new draft from “${duplicateTarget.title}”. Progress, editing holds, and sent records stay with the original.`}
+          confirmLabel="Create next issue"
+          busyLabel="Duplicating…"
+          busy={busy !== null}
+          onConfirm={(issue) => void confirmDuplicate(issue)}
+          onCancel={() => {
+            duplicateRequest.current = null
+            setDuplicateTarget(null)
+          }}
+        />
       )}
     </main>
   )
