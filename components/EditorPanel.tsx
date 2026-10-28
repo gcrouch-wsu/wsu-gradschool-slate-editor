@@ -126,7 +126,11 @@ export default function EditorPanel({
         const panel = panels[key]
         const Icon = panel.icon
         return (
-          <div key={key} className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden">
+          <div
+            key={key}
+            data-preview-target={key === 'masthead' || key === 'footer' ? key : undefined}
+            className="mb-4 border border-wsu-border-light rounded-lg overflow-hidden"
+          >
             <button
               type="button"
               onClick={() => toggleSection(key)}

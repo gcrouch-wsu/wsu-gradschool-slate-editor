@@ -198,3 +198,11 @@ select {
 }
 
 
+
+/* Scrollable without a visible scroll bar (the editor preview follows editing instead). */
+.scrollbar-hidden {
+  scrollbar-width: none;
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}

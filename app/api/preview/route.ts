@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   if (denied) return denied
   try {
     const data = normalizeNewsletter(await request.json(), { requireShape: true })
-    const htmlOutput = renderFullEmail(data)
+    const htmlOutput = renderFullEmail(data, { previewMarkers: true })
     return NextResponse.json<PreviewResponse>({
       html: htmlOutput,
       success: true,

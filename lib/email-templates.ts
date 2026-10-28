@@ -1130,6 +1130,7 @@ function renderSection(
   showBorder = true,
   settings: Settings | null = null,
   isLast = false,
+  markCard: (cardIndex: number, html: string) => string = (_, html) => html,
 ): string {
   const title = section.title || ''
   const key = section.key || ''
@@ -1166,7 +1167,8 @@ function renderSection(
   const cards = section.cards || []
   const cardHtml: string[] = []
 
-  for (const card of cards) {
+  for (const [cardIndex, card] of cards.entries()) {
+    const start = cardHtml.length
     if (card.type === 'cta') {
       // CTA box with full button customization AND padding support
       const ctaTitle = card.title || ''
@@ -1204,15 +1206,20 @@ function renderSection(
     } else {
       cardHtml.push(renderStandardCard(card, section, settings))
     }
+    cardHtml[start] = markCard(cardIndex, cardHtml[start])
   }
 
   return renderSectionStart(title, layout, showBorder, isLast) + '\n' + cardHtml.join('\n') + '\n' + renderSectionEnd()
 }
 
 /**
- * Generate complete email HTML with container width support
+ * Generate complete email HTML with container width support.
+ * `previewMarkers` wraps the masthead, sections, stories, and footer in data-preview-target elements so the
+ * editor preview can follow editing. Export and accessibility checks never use it.
  */
-export function renderFullEmail(input: NewsletterData): string {
+export function renderFullEmail(input: NewsletterData, { previewMarkers = false } = {}): string {
+  const mark = (target: string, html: string) =>
+    previewMarkers ? `<div data-preview-target="${target}">${html}</div>` : html
   const data = normalizeNewsletter(input)
   const masthead = data.masthead || {}
   const sections = data.sections || []
@@ -1251,7 +1258,14 @@ export function renderFullEmail(input: NewsletterData): string {
   const sectionsHtml: string[] = []
   for (let i = 0; i < sections.length; i++) {
     const isLast = i === sections.length - 1
-    sectionsHtml.push(renderSection(sections[i], sectionSpacing, showSectionBorders, settings, isLast))
+    sectionsHtml.push(
+      mark(
+        `section-${i}`,
+        renderSection(sections[i], sectionSpacing, showSectionBorders, settings, isLast, (cardIndex, html) =>
+          mark(`story-${i}-${cardIndex}`, html),
+        ),
+      ),
+    )
   }
 
   // Assemble complete email
@@ -1284,7 +1298,7 @@ export function renderFullEmail(input: NewsletterData): string {
   ${renderViewInBrowser()}
   
   <!-- Masthead -->
-  ${renderMasthead(masthead, containerWidth)}
+  ${mark('masthead', renderMasthead(masthead, containerWidth))}
   
   <!-- Main Content Container -->
   <table cellpadding="0" cellspacing="0" role="presentation" width="100%" style="${STYLE_TABLE} background-color:${BG_LIGHT};">
@@ -1302,7 +1316,7 @@ export function renderFullEmail(input: NewsletterData): string {
           <!-- Footer -->
           <tr>
             <td style="background-color:${BG_WHITE}; padding:0;">
-              ${renderFooter(footer, data.template)}
+              ${mark('footer', renderFooter(footer, data.template))}
             </td>
           </tr>
         </table>

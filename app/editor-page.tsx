@@ -7,6 +7,7 @@ import { useNewsletterState } from './hooks/useNewsletterState'
 import { usePreview } from './hooks/usePreview'
 import PreviewPanel from '@/components/PreviewPanel'
 import EditorPanel from '@/components/EditorPanel'
+import { previewTargetOf } from '@/lib/client/preview-target'
 import ConfirmModal from '@/components/ConfirmModal'
 import type { NewsletterData, ValidationResult, ValidationIssue } from '@/types/newsletter'
 import { defaultFFModel } from '@/lib/defaults'
@@ -23,6 +24,7 @@ import {
 export default function EditorPage() {
   // All hooks must be called unconditionally at the top level
   const [templateType, setTemplateType] = useState<'ff' | 'briefing' | 'letter'>('ff')
+  const [previewTarget, setPreviewTarget] = useState<string | null>(null)
   const [backupWritesEnabled, setBackupWritesEnabled] = useState(false)
   const [initialData, setInitialData] = useState<NewsletterData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -528,7 +530,12 @@ export default function EditorPage() {
       </header>
 
       {/* Main Content Grid */}
-      <main aria-label="Newsletter editor" className="flex-1 grid grid-cols-2 gap-0 overflow-hidden">
+      <main
+        aria-label="Newsletter editor"
+        className="flex-1 grid grid-cols-2 gap-0 overflow-hidden"
+        onFocus={(event) => setPreviewTarget(previewTargetOf(event) ?? previewTarget)}
+        onPointerDown={(event) => setPreviewTarget(previewTargetOf(event) ?? previewTarget)}
+      >
         {/* Left Panel: Editor */}
         <EditorPanel
           state={state}
@@ -538,11 +545,9 @@ export default function EditorPage() {
         />
 
         {/* Right Panel: Preview */}
-        <PreviewPanel
-          html={html}
-          loading={previewLoading}
-          onRefresh={handleRefreshPreview}
-        />
+        <div className="h-[calc(100vh-52px)] min-w-0">
+          <PreviewPanel html={html} loading={previewLoading} target={previewTarget} onRefresh={handleRefreshPreview} />
+        </div>
       </main>
 
       {/* Validation Modal */}

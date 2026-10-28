@@ -108,6 +108,7 @@ function SortableSectionItem({
     <div
       ref={setNodeRef}
       style={style}
+      data-preview-target={`section-${sectionIndex}`}
       className={`p-4 border-2 border-dashed border-wsu-border-light rounded-lg bg-wsu-bg-light ${
         isDragging ? 'shadow-lg ring-2 ring-wsu-crimson' : ''
       }`}
@@ -182,6 +183,7 @@ function SortableCardItem({
     <div
       ref={setNodeRef}
       style={style}
+      data-preview-target={`story-${sectionIndex}-${cardIndex}`}
       className={`p-2 bg-white border border-wsu-border-light rounded-md flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between ${
         isDragging ? 'shadow-lg ring-2 ring-wsu-crimson' : ''
       }`}
@@ -1034,24 +1036,34 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
 
       {/* Card Editor Modal */}
       {editingCard && (
-        <CardEditor
-          card={editingCard.card}
-          isNew={editingCard.isNew}
-          onSave={saveCard}
-          onCancel={() => setEditingCard(null)}
-          onDelete={editingCard.isNew ? undefined : deleteCard}
-        />
+        <div
+          data-preview-target={
+            editingCard.isNew
+              ? `section-${editingCard.sectionIndex}`
+              : `story-${editingCard.sectionIndex}-${editingCard.cardIndex}`
+          }
+        >
+          <CardEditor
+            card={editingCard.card}
+            isNew={editingCard.isNew}
+            onSave={saveCard}
+            onCancel={() => setEditingCard(null)}
+            onDelete={editingCard.isNew ? undefined : deleteCard}
+          />
+        </div>
       )}
 
       {/* Closure Editor Modal */}
       {editingClosure && (
-        <ClosureEditor
-          closure={editingClosure.closure}
-          isNew={editingClosure.isNew}
-          onSave={saveClosure}
-          onCancel={() => setEditingClosure(null)}
-          onDelete={editingClosure.isNew ? undefined : deleteClosure}
-        />
+        <div data-preview-target={`section-${editingClosure.sectionIndex}`}>
+          <ClosureEditor
+            closure={editingClosure.closure}
+            isNew={editingClosure.isNew}
+            onSave={saveClosure}
+            onCancel={() => setEditingClosure(null)}
+            onDelete={editingClosure.isNew ? undefined : deleteClosure}
+          />
+        </div>
       )}
 
       {/* Confirm Modal */}

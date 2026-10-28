@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { renderFullEmail } from '@/lib/email-templates'
+import { renderExportedHtml } from '@/lib/export-html'
 import { defaultBriefingModel, defaultFFModel, defaultLetterModel } from '@/lib/defaults'
 import {
   documentFingerprint,
@@ -18,6 +19,19 @@ function embed(data: unknown, format: 'b64' | 'legacy') {
 }
 
 describe('newsletter document safety', () => {
+  it('marks parts of the preview for following edits, but never the exported HTML', () => {
+    const data = normalizeNewsletter(defaultFFModel(), { requireShape: true })
+    const preview = renderFullEmail(data, { previewMarkers: true })
+    for (const target of ['masthead', 'section-0', 'story-0-0', 'footer'])
+      expect(preview).toContain(`data-preview-target="${target}"`)
+    expect(renderFullEmail(data)).not.toContain('data-preview-target')
+    expect(renderExportedHtml(data)).not.toContain('data-preview-target')
+    // Markers only wrap the email; removing them leaves the exported email.
+    expect(preview.replace(/<div data-preview-target="[^"]+">|<\/div>/g, '')).toBe(
+      renderFullEmail(data).replace(/<\/div>/g, ''),
+    )
+  })
+
   it('keeps the three default templates and the renderer-owned Slate link', () => {
     for (const model of [defaultFFModel(), defaultBriefingModel(), defaultLetterModel()]) {
       const normalized = normalizeNewsletter(model, { requireShape: true })

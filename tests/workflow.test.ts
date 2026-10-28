@@ -137,13 +137,13 @@ test('provider failure, invalid JSON, and unsafe HTML are rejected', async () =>
       proposed: '<script>alert(1)</script><p>Keep https://gradschool.wsu.edu.</p>',
       reasons: [{ guide: 'Section 8', text: 'Remove unsafe markup.' }],
     }),
-  ).toThrow(/unsafe HTML/)
+  ).toThrow(/HTML that newsletters don't allow \(<script>\)/)
   expect(() =>
     validateSuggestion('edit', '<p>See https://gradschool.wsu.edu.</p>', {
       proposed: '<p>See the site.</p>',
       reasons: [{ guide: 'Section 2', text: 'The URL was dropped.' }],
     }),
-  ).toThrow(/URL/)
+  ).toThrow(/removed or changed the web address https:\/\/gradschool\.wsu\.edu/)
   expect(() => validateReview(draft(), { proposedDocument: {}, findings: [] })).toThrow(/replace the newsletter/)
 })
 
@@ -287,22 +287,41 @@ test('strict AI output rejects unknown fields and protects links, images, layout
   ).toThrow(/unsupported/)
   const original =
     '<p><a href="mailto:gradschool@example.edu">Contact us</a><img src="https://example.edu/image.png" alt="Campus" width="200" /></p>'
+  for (const [proposed, reason] of [
+    [original.replace('mailto:gradschool@example.edu', 'mailto:other@example.edu'), /removed or changed the link to mailto:gradschool@example\.edu/],
+    [original.replace('alt="Campus"', 'alt="Building"'), /changed the description \(alt text\) of the image "Campus"/],
+    [original.replace('https://example.edu/image.png', 'https://example.edu/other.png'), /removed or changed the image "Campus"/],
+    [original + '<h1>Another heading</h1>', /heading or divider/],
+    [original + '<table><tr><td>Added</td></tr></table>', /layout of a table/],
+    [original + '<p><a href="https://example.edu/new">More</a></p>', /added a link to https:\/\/example\.edu\/new/],
+  ] as const)
+    expect(() => validateSuggestion('edit', original, { proposed, reasons })).toThrow(reason)
+  // Formatting may change with the wording; harmless extras are removed rather than rejected.
+  const formatted =
+    '<p style="text-align:center">Apply soon.</p><p>Read <a href="https://example.edu/a">A</a> and <a href="https://example.edu/b">B</a>.</p>' +
+    '<ul><li style="margin-bottom:8px"><p>One</p></li><li style="margin-bottom:8px"><p>Two</p></li></ul>'
   for (const proposed of [
-    original.replace('mailto:gradschool@example.edu', 'mailto:other@example.edu'),
-    original.replace('alt="Campus"', 'alt="Building"'),
-    original.replace('https://example.edu/image.png', 'https://example.edu/other.png'),
     original.replace('width="200"', 'width="300"'),
     original.replace('<p>', '<p style="color:#ffffff">'),
-    original + '<h1>Another heading</h1>',
-  ])
-    expect(() => validateSuggestion('edit', original, { proposed, reasons })).toThrow(/link|image|layout/)
+    original.replace('<a href', '<a target="_blank" rel="noopener" href'),
+    '<font>' + original + '</font>',
+  ]) {
+    const result = validateSuggestion('edit', original, { proposed, reasons }) as { proposed: string }
+    expect(result.proposed).not.toMatch(/target=|<font/)
+  }
+  for (const proposed of [
+    '<p>Apply soon. Read <a href="https://example.edu/b">B</a> and <a href="https://example.edu/a">A</a>.</p><ul><li><p>One and two</p></li></ul>',
+    formatted.replace(/ style="margin-bottom:8px"/g, ''),
+  ]) {
+    expect(validateSuggestion('edit', formatted, { proposed, reasons })).toHaveProperty('proposed')
+  }
   const httpText = '<p>Details are at http://gradschool.wsu.edu/dates.</p>'
   expect(() =>
     validateSuggestion('edit', httpText, {
       proposed: '<p>Details are at http://gradschool.wsu.edu/moved.</p>',
       reasons,
     }),
-  ).toThrow(/URL/)
+  ).toThrow(/web address http:\/\/gradschool\.wsu\.edu\/dates/)
   expect(
     validateSuggestion('edit', httpText, {
       proposed: '<p>See the dates at http://gradschool.wsu.edu/dates.</p>',
@@ -313,7 +332,7 @@ test('strict AI output rejects unknown fields and protects links, images, layout
     validateSuggestion('headlines', 'Hello {{name}}', {
       suggestions: [{ text: 'Hello', reason: 'Shorter' }],
     }),
-  ).toThrow(/placeholder/)
+  ).toThrow(/removed or changed the Slate placeholder \{\{name\}\}/)
   const queryLink = '<p><a href="https://example.edu/?confirmation=1&amp;registration=open">Register</a></p>'
   expect(
     validateSuggestion('edit', queryLink, {

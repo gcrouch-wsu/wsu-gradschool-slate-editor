@@ -11,11 +11,19 @@ test('preview is isolated and the three templates render', async ({ page }) => {
   const title = page.locator('#newsletter-title')
   await expect(title).toHaveValue('Friday Focus Newsletter')
   const frame = page.locator('iframe[title="Newsletter Preview"]')
-  await expect(frame).toHaveAttribute('sandbox', '')
+  // The editor may read the preview to size and scroll it, but the preview still cannot run scripts,
+  // submit forms, open pop-ups, or navigate the editor.
+  await expect(frame).toHaveAttribute('sandbox', 'allow-same-origin')
   await expect(frame).toHaveAttribute('srcdoc', /href="browser"/)
   await expect(frame).not.toHaveAttribute('srcdoc', /<script/i)
-  const documentAccess = await frame.evaluate((element: HTMLIFrameElement) => element.contentDocument)
-  expect(documentAccess).toBeNull()
+  const scriptRan = await frame.evaluate((element: HTMLIFrameElement) => {
+    const doc = element.contentDocument!
+    const script = doc.createElement('script')
+    script.textContent = 'window.previewScriptRan = true'
+    doc.body.append(script)
+    return (element.contentWindow as Window & { previewScriptRan?: boolean }).previewScriptRan ?? false
+  })
+  expect(scriptRan).toBe(false)
 
   await page.locator('select').filter({ hasText: 'Friday Focus (Students)' }).selectOption('briefing')
   await page.getByRole('button', { name: 'Switch' }).click()

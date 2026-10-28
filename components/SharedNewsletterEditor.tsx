@@ -2,8 +2,9 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import EditorPanel from '@/components/EditorPanel'
+import { previewTargetOf } from '@/lib/client/preview-target'
 import PreviewPanel from '@/components/PreviewPanel'
 import AiAssistDialog from '@/components/AiAssistDialog'
 import ConfirmModal from '@/components/ConfirmModal'
@@ -134,6 +135,17 @@ export default function SharedNewsletterEditor({
   const [holder, setHolder] = useState<{ name: string; self: boolean } | null>(null)
   const lastTyping = useRef<{ target: Element | null; at: number }>({ target: null, at: 0 })
   const [mobileView, setMobileView] = useState<'edit' | 'preview'>('edit')
+  const [previewTarget, setPreviewTarget] = useState<string | null>(null)
+  const actionsRef = useRef<HTMLDivElement>(null)
+  const [actionsHeight, setActionsHeight] = useState(0)
+  // The preview pins below the sticky draft actions, whose height changes as they wrap.
+  useEffect(() => {
+    const bar = actionsRef.current
+    if (!bar) return
+    const observer = new ResizeObserver(() => setActionsHeight(bar.offsetHeight))
+    observer.observe(bar)
+    return () => observer.disconnect()
+  }, [])
   const saverRef = useRef<SerializedSaver | null>(null)
   const versionRef = useRef(initialVersion)
   const lastNoted = useRef(JSON.stringify(initialContent))
@@ -976,6 +988,7 @@ export default function SharedNewsletterEditor({
         </details>
       </header>
       <div
+        ref={actionsRef}
         aria-label="Draft actions"
         className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-wsu-border-light bg-white px-4 py-2 shadow-sm"
       >
@@ -1245,8 +1258,15 @@ export default function SharedNewsletterEditor({
           Preview
         </button>
       </div>
-      <main className="flex-1 grid grid-cols-1 pb-20 lg:pb-0 lg:grid-cols-2 min-w-0">
-        <div className={`min-w-0 ${mobileView === 'edit' ? '' : 'hidden lg:block'}`}>
+      <main
+        className="flex-1 grid grid-cols-1 pb-20 lg:pb-0 lg:grid-cols-2 min-w-0"
+        style={{ '--draft-actions': `${actionsHeight}px` } as CSSProperties}
+      >
+        <div
+          className={`min-w-0 ${mobileView === 'edit' ? '' : 'hidden lg:block'}`}
+          onFocus={(event) => setPreviewTarget(previewTargetOf(event) ?? previewTarget)}
+          onPointerDown={(event) => setPreviewTarget(previewTargetOf(event) ?? previewTarget)}
+        >
           <EditorPanel
             state={state}
             updateState={onEdit}
@@ -1259,8 +1279,18 @@ export default function SharedNewsletterEditor({
             storyRequest={storyRequest}
           />
         </div>
-        <div className={`min-w-0 ${mobileView === 'preview' ? '' : 'hidden lg:block'}`}>
-          <PreviewPanel html={html} loading={loading} error={previewError} onRefresh={() => void updatePreview(state)} />
+        <div
+          className={`min-w-0 lg:sticky lg:top-[var(--draft-actions)] lg:h-[calc(100vh-var(--draft-actions))] lg:self-start ${
+            mobileView === 'preview' ? '' : 'hidden lg:block'
+          }`}
+        >
+          <PreviewPanel
+            html={html}
+            loading={loading}
+            error={previewError}
+            target={previewTarget}
+            onRefresh={() => void updatePreview(state)}
+          />
         </div>
       </main>
       {historyOpen && (

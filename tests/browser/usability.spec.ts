@@ -268,10 +268,83 @@ test('version history restores as one Undo step, and check results stay visible 
   const frame = page.locator('iframe[title="Newsletter Preview"]')
   await page.getByRole('button', { name: 'Phone width', exact: true }).click()
   await expect(frame).toHaveCSS('width', '375px')
-  await expect(frame).toHaveAttribute('sandbox', '')
+  await expect(frame).toHaveAttribute('sandbox', 'allow-same-origin')
 
   // Reloading your own tab explains the hold is yours.
   await page.reload()
   await expect(status).toHaveText('View only')
   await expect(page.getByTestId('holder-message')).toContainText('You have this draft open in another tab')
+})
+
+test('the preview stays pinned, has no inner scroll bar, and follows the part being edited', async ({
+  page,
+  context,
+}) => {
+  await context.request.post('/api/auth/development/session', {
+    data: { userId: accounts.editorA.id },
+    headers: { Origin: origin },
+  })
+  const created = await context.request.post('/api/newsletters', {
+    data: { template: 'ff' },
+    headers: { Origin: origin },
+  })
+  const id = (await created.json()).id
+  await page.setViewportSize({ width: 1400, height: 800 })
+  // Instant scrolling keeps positions stable while they are measured.
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto(`/newsletters/${id}`)
+  await expect(page.getByTestId('save-status')).toHaveText('Saved')
+  const frame = page.locator('iframe[title="Newsletter Preview"]')
+  await expect(page.frameLocator('iframe[title="Newsletter Preview"]').locator('[data-preview-target="footer"]')).toBeAttached()
+
+  // The frame is as tall as the newsletter, so it never scrolls inside.
+  await expect
+    .poll(() =>
+      frame.evaluate((element: HTMLIFrameElement) => {
+        const doc = element.contentDocument!
+        return doc.scrollingElement!.scrollHeight <= element.clientHeight + 1 && element.clientHeight > 800
+      }),
+    )
+    .toBe(true)
+
+  // Where a marker sits inside the visible preview area, in pixels from its top.
+  const visibleTop = (target: string) =>
+    page.getByRole('region', { name: 'Preview content' }).evaluate((scroller, name) => {
+      const iframe = scroller.querySelector('iframe')!
+      const marker = iframe.contentDocument!.querySelector(`[data-preview-target="${name}"]`)!
+      return iframe.offsetTop + marker.getBoundingClientRect().top - scroller.scrollTop
+    }, target)
+  const previewHeight = () =>
+    page.getByRole('region', { name: 'Preview content' }).evaluate((scroller) => scroller.clientHeight)
+  const nearTop = async (target: string) => {
+    const top = await visibleTop(target)
+    return top >= 0 && top < 40
+  }
+
+  // The footer is last, so the preview scrolls to its end with the footer in view.
+  const height = await previewHeight()
+  expect(await visibleTop('footer')).toBeGreaterThan(height)
+  await page.getByRole('button', { name: 'Footer', exact: true }).click()
+  await expect
+    .poll(async () => {
+      const top = await visibleTop('footer')
+      return top >= 0 && top < height - 100
+    })
+    .toBe(true)
+
+  await page.getByLabel('Issue title', { exact: true }).click()
+  await expect.poll(() => nearTop('masthead')).toBe(true)
+
+  await page.getByRole('button', { name: 'Edit Sample Announcement', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Edit story', exact: true })).toBeVisible()
+  await expect.poll(() => nearTop('story-0-0')).toBe(true)
+  await page.getByRole('dialog', { name: 'Edit story', exact: true }).getByRole('button', { name: 'Cancel', exact: true }).click()
+
+  // Scrolling the page leaves the preview pinned under the draft actions.
+  await page.mouse.move(300, 600)
+  await page.mouse.wheel(0, 3000)
+  await expect
+    .poll(async () => (await page.getByRole('complementary', { name: 'Newsletter Preview' }).boundingBox())!.y)
+    .toBeLessThan(150)
+  expect((await page.getByRole('complementary', { name: 'Newsletter Preview' }).boundingBox())!.y).toBeGreaterThan(0)
 })
