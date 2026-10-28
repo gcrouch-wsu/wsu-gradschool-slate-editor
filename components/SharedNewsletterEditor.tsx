@@ -1111,7 +1111,7 @@ export default function SharedNewsletterEditor({
               type="button"
               disabled={!canWrite || busy !== null}
               onClick={() => {
-                onEdit(() => recovery, false)
+                onEdit(() => recovery)
                 setRecovery(null)
               }}
             >
@@ -1165,7 +1165,7 @@ export default function SharedNewsletterEditor({
                             {' '}
                             <button
                               type="button"
-                              className="font-semibold text-wsu-crimson underline"
+                              className="inline-flex min-h-11 items-center px-2 font-semibold text-wsu-crimson underline"
                               onClick={() => openStory(story)}
                             >
                               Open story
@@ -1211,7 +1211,7 @@ export default function SharedNewsletterEditor({
                     {story && (
                       <button
                         type="button"
-                        className="mt-1 font-semibold text-wsu-crimson underline"
+                        className="mt-1 inline-flex min-h-11 items-center font-semibold text-wsu-crimson underline"
                         onClick={() => openStory(story)}
                       >
                         Open story

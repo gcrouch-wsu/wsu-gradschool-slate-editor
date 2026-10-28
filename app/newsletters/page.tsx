@@ -66,6 +66,7 @@ export default function NewsletterLibraryPage() {
   const [pendingPurge, setPendingPurge] = useState<Summary | null>(null)
   const [duplicateTarget, setDuplicateTarget] = useState<Summary | null>(null)
   const [createTemplate, setCreateTemplate] = useState<TemplateType | null>(null)
+  const [createError, setCreateError] = useState('')
   const duplicateRequest = useRef<string | null>(null)
   const [lastDeleted, setLastDeleted] = useState<Summary | null>(null)
   const [notice, setNotice] = useState('')
@@ -128,6 +129,10 @@ export default function NewsletterLibraryPage() {
     setBusy(null)
   }
 
+  function openCreate(template: TemplateType) {
+    setCreateError('')
+    setCreateTemplate(template)
+  }
   async function create(template: TemplateType, issue: { title: string; date: string }) {
     if (!begin(`Creating ${templateNames[template]}…`)) return
     try {
@@ -138,8 +143,9 @@ export default function NewsletterLibraryPage() {
       setCreateTemplate(null)
       routerRef.current.push(`/newsletters/${body.id}`)
     } catch (failure) {
-      setCreateTemplate(null)
-      setError(`${errorMessage(failure)} Creation could not be confirmed; refresh the library before trying again.`)
+      setCreateError(
+        `${errorMessage(failure)} Creation could not be confirmed. Check the library before trying again; your issue details are kept here.`,
+      )
     } finally {
       end()
     }
@@ -266,14 +272,14 @@ export default function NewsletterLibraryPage() {
         </div>
       </div>
       <div className="flex flex-wrap gap-3 mb-3" aria-label="Create a newsletter">
-        <button className={primaryButton} type="button" disabled={busy !== null} onClick={() => setCreateTemplate('ff')}>
+        <button className={primaryButton} type="button" disabled={busy !== null} onClick={() => openCreate('ff')}>
           New Friday Focus
         </button>
         <button
           className={primaryButton}
           type="button"
           disabled={busy !== null}
-          onClick={() => setCreateTemplate('briefing')}
+          onClick={() => openCreate('briefing')}
         >
           New Briefing
         </button>
@@ -281,7 +287,7 @@ export default function NewsletterLibraryPage() {
           className={primaryButton}
           type="button"
           disabled={busy !== null}
-          onClick={() => setCreateTemplate('letter')}
+          onClick={() => openCreate('letter')}
         >
           New Slate Campaign
         </button>
@@ -568,8 +574,12 @@ export default function NewsletterLibraryPage() {
           confirmLabel="Create draft"
           busyLabel="Creating…"
           busy={busy !== null}
+          error={createError}
           onConfirm={(issue) => void create(createTemplate, issue)}
-          onCancel={() => setCreateTemplate(null)}
+          onCancel={() => {
+            setCreateError('')
+            setCreateTemplate(null)
+          }}
         />
       )}
       {duplicateTarget && (

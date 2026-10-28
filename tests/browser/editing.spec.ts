@@ -89,6 +89,12 @@ test('two tabs, takeover, recovery, expiry, and session revocation', async ({ br
   await expect(shownTitle(adaPage)).toHaveText('Handoff title')
   await adaPage.getByRole('button', { name: 'Restore locally' }).click()
   await expect(shownTitle(adaPage)).toHaveText('Unsaved local title')
+  // Restoring the recovery copy is one ordinary Undo step.
+  await adaPage.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(shownTitle(adaPage)).toHaveText('Handoff title')
+  await adaPage.getByRole('button', { name: 'Redo', exact: true }).click()
+  await expect(shownTitle(adaPage)).toHaveText('Unsaved local title')
+  await expect(adaPage.getByRole('button', { name: 'Redo', exact: true })).toBeDisabled()
   await adaPage.reload()
   await expect(shownTitle(adaPage)).toHaveText('Handoff title')
 

@@ -14,6 +14,7 @@ export default function IssueDialog({
   confirmLabel,
   busyLabel,
   busy,
+  error = '',
   onConfirm,
   onCancel,
 }: {
@@ -22,6 +23,7 @@ export default function IssueDialog({
   confirmLabel: string
   busyLabel: string
   busy: boolean
+  error?: string
   onConfirm: (issue: { title: string; date: string }) => void
   onCancel: () => void
 }) {
@@ -90,6 +92,11 @@ export default function IssueDialog({
             value={issueDate}
             onChange={(event) => setIssueDate(event.target.value)}
           />
+          {error && (
+            <p role="alert" className="mt-2 text-sm text-red-800">
+              {error}
+            </p>
+          )}
           {problem && (
             <p id={`${fieldId}-problem`} role="alert" className="mt-2 text-sm text-red-800">
               {problem}

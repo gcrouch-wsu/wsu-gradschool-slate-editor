@@ -3,7 +3,11 @@ import { expect, test } from '@playwright/test'
 test('preview is isolated and the three templates render', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('select').filter({ hasText: 'Friday Focus (Students)' })).toBeVisible()
-  await page.getByRole('button', { name: 'Masthead' }).click()
+  const masthead = page.getByRole('button', { name: 'Masthead' })
+  await expect(async () => {
+    if ((await masthead.getAttribute('aria-expanded')) !== 'true') await masthead.click()
+    await expect(masthead).toHaveAttribute('aria-expanded', 'true', { timeout: 1000 })
+  }).toPass()
   const title = page.locator('#newsletter-title')
   await expect(title).toHaveValue('Friday Focus Newsletter')
   const frame = page.locator('iframe[title="Newsletter Preview"]')

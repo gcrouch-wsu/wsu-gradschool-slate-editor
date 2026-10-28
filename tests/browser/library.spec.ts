@@ -47,8 +47,12 @@ test('library loading, retry, create/import failures, and editor account present
   await page.getByRole('button', { name: 'New Friday Focus', exact: true }).click()
   const createDialog = page.getByRole('dialog', { name: 'New Friday Focus' })
   await expect(createDialog.getByLabel('Issue title', { exact: true })).toBeFocused()
+  await createDialog.getByLabel('Issue title', { exact: true }).fill('Kept after a failure')
   await createDialog.getByRole('button', { name: 'Create draft', exact: true }).click()
-  await expect(page.getByRole('main').getByRole('alert')).toContainText('Connection failed')
+  await expect(createDialog.getByRole('alert')).toContainText('Connection failed')
+  await expect(createDialog.getByLabel('Issue title', { exact: true })).toHaveValue('Kept after a failure')
+  await createDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(createDialog).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'New Briefing', exact: true })).toBeEnabled()
   await expect(page.getByLabel('Import HTML', { exact: true })).toBeEnabled()
   await page.getByLabel('Import HTML', { exact: true }).setInputFiles({

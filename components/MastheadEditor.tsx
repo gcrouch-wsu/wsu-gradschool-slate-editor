@@ -20,6 +20,7 @@ export default function MastheadEditor({ state, updateState, onSuggestPreheader 
         <input
           id="issue-title"
           type="text"
+          maxLength={200}
           value={state.issue?.title || ''}
           onChange={(event) =>
             updateState((prev) => ({
@@ -43,6 +44,7 @@ export default function MastheadEditor({ state, updateState, onSuggestPreheader 
         <input
           id="issue-date"
           type="text"
+          maxLength={80}
           value={state.issue?.date || ''}
           onChange={(event) =>
             updateState((prev) => ({
