@@ -1,5 +1,13 @@
 import { expect, test } from 'vitest'
-import { compareSuggestions, listEdits, presentDecisions, resolvedField, type BlockNode, type InlineNode } from '@/lib/ai/suggestion-diff'
+import {
+  compareSuggestions,
+  comparisonPassages,
+  listEdits,
+  presentDecisions,
+  resolvedField,
+  type BlockNode,
+  type InlineNode,
+} from '@/lib/ai/suggestion-diff'
 
 function runs(nodes: InlineNode[], into: { mark: string; text: string }[] = []) {
   for (const node of nodes) {
@@ -44,10 +52,7 @@ function links(nodes: InlineNode[], into: { href: string; runs: { mark: string; 
 }
 
 test('word changes, insertions, and deletions leave the rest of the sentence unchanged', () => {
-  const changed = compareSuggestions(
-    '<p>The deadline is October 30.</p>',
-    '<p>The deadline is October 31.</p>',
-  )
+  const changed = compareSuggestions('<p>The deadline is October 30.</p>', '<p>The deadline is October 31.</p>')
   expect(joined(changed.changes, 'removed')).toBe('30')
   expect(joined(changed.changes, 'added')).toBe('31')
   expect(joined(changed.changes, 'same')).toContain('The deadline is October')
@@ -212,7 +217,10 @@ test('individual edits can be accepted or passed without rewriting the source st
 })
 
 test('passing an insertion, deletion, or punctuation change keeps the other words', () => {
-  const inserted = compareSuggestions('<p>The deadline is October 30.</p>', '<p>The application deadline is October 30.</p>')
+  const inserted = compareSuggestions(
+    '<p>The deadline is October 30.</p>',
+    '<p>The application deadline is October 30.</p>',
+  )
   const insertion = listEdits(inserted.changes)
   expect(insertion).toHaveLength(1)
   const insertedHtml = resolvedField(
@@ -294,4 +302,15 @@ test('repeated words, entities, links, and styled text stay separate and safe', 
   expect(unsafe).not.toContain('<script')
   expect(unsafe).not.toContain('javascript:')
   expect(unsafe).toContain('Hello')
+})
+
+test('comparison passages keep replacements together and retain surrounding reading order', () => {
+  const replacement = compareSuggestions('<p>Old text.</p>', '<h2>New heading.</h2>').changes
+  const before = compareSuggestions('<p>Before.</p>', '<p>Before.</p>').changes
+  const after = compareSuggestions('<p>After.</p>', '<p>After.</p>').changes
+  const groups = comparisonPassages([...before, ...replacement, ...after])
+  expect(groups).toHaveLength(3)
+  expect(groups[1]).toHaveLength(2)
+  expect(listEdits(groups[1])).toHaveLength(1)
+  expect(comparisonPassages(compareSuggestions('<p>One.</p><p>Two.</p>', '<p>First.</p><p>Second.</p>').changes)).toHaveLength(2)
 })

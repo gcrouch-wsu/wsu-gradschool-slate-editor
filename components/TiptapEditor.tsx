@@ -49,12 +49,7 @@ interface TiptapEditorProps {
   style?: React.CSSProperties
 }
 
-export default function TiptapEditor({
-  value,
-  onChange,
-  placeholder = 'Enter content...',
-  style,
-}: TiptapEditorProps) {
+export default function TiptapEditor({ value, onChange, placeholder = 'Enter content...', style }: TiptapEditorProps) {
   const [linkPromptOpen, setLinkPromptOpen] = useState(false)
   const [codeView, setCodeView] = useState(false)
   const [htmlCode, setHtmlCode] = useState(value || '')
@@ -70,6 +65,8 @@ export default function TiptapEditor({
     immediatelyRender: false,
     extensions: [
       StarterKit.configure({
+        link: false,
+        underline: false,
         listItem: false, // Disable default ListItem to use our custom one
       }),
       // Custom ListItem extension with style support
@@ -79,12 +76,12 @@ export default function TiptapEditor({
             ...this.parent?.(),
             style: {
               default: null,
-              parseHTML: element => {
+              parseHTML: (element) => {
                 // Always preserve the style attribute exactly as it is
                 const style = element.getAttribute('style')
                 return style || null
               },
-              renderHTML: attributes => {
+              renderHTML: (attributes) => {
                 // Always render the style attribute if it exists
                 if (!attributes.style) {
                   return {}
@@ -123,6 +120,9 @@ export default function TiptapEditor({
     editorProps: {
       attributes: {
         class: 'tiptap-editor focus:outline-none',
+        role: 'textbox',
+        'aria-label': 'Story body',
+        'aria-multiline': 'true',
       },
       handleKeyDown: (view, event) => {
         if (!editor) return false
@@ -151,8 +151,7 @@ export default function TiptapEditor({
       if (codeView) return // Don't update from editor when in code view
       const html = editor.getHTML()
       // Normalize empty content
-      const normalizedValue =
-        html === '<p></p>' || html.trim() === '' ? '' : html
+      const normalizedValue = html === '<p></p>' || html.trim() === '' ? '' : html
 
       // Debug: Log HTML to check if list styles are preserved
       if (normalizedValue.includes('<li')) {
@@ -177,8 +176,7 @@ export default function TiptapEditor({
   useEffect(() => {
     if (editor && value !== undefined && !codeView) {
       const currentHtml = editor.getHTML()
-      const normalizedCurrent =
-        currentHtml === '<p></p>' || currentHtml.trim() === '' ? '' : currentHtml
+      const normalizedCurrent = currentHtml === '<p></p>' || currentHtml.trim() === '' ? '' : currentHtml
 
       // Only update if the value is different (to avoid infinite loops)
       if (normalizedCurrent !== value) {
@@ -223,66 +221,72 @@ export default function TiptapEditor({
 
   /**
    * Updates inline styles on all list items in the editor.
-   * 
+   *
    * This function applies line-height and margin-bottom styles directly to <li> elements
    * using inline styles with !important to override any CSS rules. This is necessary
    * because TipTap wraps list item content in <p> tags, and we need to prevent margin
    * collapse between the <li> and <p> margins.
-   * 
+   *
    * @param lineHeight - Optional line-height value (e.g., "1.5"). Uses state if not provided.
    * @param itemSpacing - Optional margin-bottom value in pixels (e.g., "8"). Uses state if not provided.
-   * 
+   *
    * @see AI_HANDOFF.md "List Item Gap Control - FIXED" section for detailed explanation
    */
-  const updateListItemStyles = useCallback((lineHeight?: string, itemSpacing?: string) => {
-    if (!editor) return
+  const updateListItemStyles = useCallback(
+    (lineHeight?: string, itemSpacing?: string) => {
+      if (!editor) return
 
-    const lineHeightValue = lineHeight !== undefined ? lineHeight : listLineHeight
-    const itemSpacingValue = itemSpacing !== undefined ? itemSpacing : listItemSpacing
+      const lineHeightValue = lineHeight !== undefined ? lineHeight : listLineHeight
+      const itemSpacingValue = itemSpacing !== undefined ? itemSpacing : listItemSpacing
 
-    editor.chain().command(({ tr, state }) => {
-      let modified = false
+      editor
+        .chain()
+        .command(({ tr, state }) => {
+          let modified = false
 
-      // Iterate through all nodes in the document
-      state.doc.descendants((node, pos) => {
-        if (node.type.name === 'listItem') {
-          const attrs = node.attrs
-          let currentStyle = attrs.style || ''
+          // Iterate through all nodes in the document
+          state.doc.descendants((node, pos) => {
+            if (node.type.name === 'listItem') {
+              const attrs = node.attrs
+              let currentStyle = attrs.style || ''
 
-          // Remove existing line-height and margin-bottom styles before adding new ones
-          // This regex handles styles with or without !important flag
-          currentStyle = currentStyle
-            .replace(/line-height\s*:\s*[^;]+(!important\s*)?;?\s*/gi, '')
-            .replace(/margin-bottom\s*:\s*[^;]+(!important\s*)?;?\s*/gi, '')
-            .trim()
+              // Remove existing line-height and margin-bottom styles before adding new ones
+              // This regex handles styles with or without !important flag
+              currentStyle = currentStyle
+                .replace(/line-height\s*:\s*[^;]+(!important\s*)?;?\s*/gi, '')
+                .replace(/margin-bottom\s*:\s*[^;]+(!important\s*)?;?\s*/gi, '')
+                .trim()
 
-          // Build new style string - margin-bottom must come first with !important
-          // This ensures it overrides any CSS rules, including browser defaults
-          const styles: string[] = []
-          styles.push(`margin-bottom: ${itemSpacingValue}px !important`)
-          if (lineHeightValue) styles.push(`line-height: ${lineHeightValue} !important`)
-          
-          // Preserve any other existing styles (don't remove user-added styles)
-          if (currentStyle) {
-            const cleaned = currentStyle.replace(/;\s*$/, '').trim()
-            if (cleaned) styles.push(cleaned)
+              // Build new style string - margin-bottom must come first with !important
+              // This ensures it overrides any CSS rules, including browser defaults
+              const styles: string[] = []
+              styles.push(`margin-bottom: ${itemSpacingValue}px !important`)
+              if (lineHeightValue) styles.push(`line-height: ${lineHeightValue} !important`)
+
+              // Preserve any other existing styles (don't remove user-added styles)
+              if (currentStyle) {
+                const cleaned = currentStyle.replace(/;\s*$/, '').trim()
+                if (cleaned) styles.push(cleaned)
+              }
+
+              const newStyle = styles.filter((s) => s).join('; ')
+
+              // Always update the node markup, even if style appears unchanged
+              // This ensures styles are applied after editor operations that might reset them
+              tr.setNodeMarkup(pos, undefined, { ...attrs, style: newStyle || null })
+              modified = true
+            }
+          })
+
+          if (modified) {
+            tr.setMeta('addToHistory', true)
           }
-
-          const newStyle = styles.filter(s => s).join('; ')
-
-          // Always update the node markup, even if style appears unchanged
-          // This ensures styles are applied after editor operations that might reset them
-          tr.setNodeMarkup(pos, undefined, { ...attrs, style: newStyle || null })
-          modified = true
-        }
-      })
-
-      if (modified) {
-        tr.setMeta('addToHistory', true)
-      }
-      return modified
-    }).run()
-  }, [editor, listLineHeight, listItemSpacing])
+          return modified
+        })
+        .run()
+    },
+    [editor, listLineHeight, listItemSpacing],
+  )
 
   // Handle line-height change (spacing within list item when text wraps)
   const handleLineHeightChange = (lineHeight: string) => {
@@ -329,12 +333,11 @@ export default function TiptapEditor({
           type="button"
           onClick={() => editor.chain().focus().toggleBold().run()}
           disabled={!editor.can().chain().focus().toggleBold().run() || codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
-            editor.isActive('bold')
-              ? 'bg-wsu-crimson text-white'
-              : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
+          className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
+            editor.isActive('bold') ? 'bg-wsu-crimson text-white' : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
           } border border-wsu-border-light disabled:opacity-50`}
           title="Bold"
+          aria-label="Bold"
         >
           <Bold className="w-4 h-4" />
         </button>
@@ -342,12 +345,13 @@ export default function TiptapEditor({
           type="button"
           onClick={() => editor.chain().focus().toggleItalic().run()}
           disabled={!editor.can().chain().focus().toggleItalic().run() || codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
+          className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
             editor.isActive('italic')
               ? 'bg-wsu-crimson text-white'
               : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
           } border border-wsu-border-light disabled:opacity-50`}
           title="Italic"
+          aria-label="Italic"
         >
           <Italic className="w-4 h-4" />
         </button>
@@ -355,85 +359,28 @@ export default function TiptapEditor({
           type="button"
           onClick={() => editor.chain().focus().toggleUnderline().run()}
           disabled={codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
+          className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
             editor.isActive('underline')
               ? 'bg-wsu-crimson text-white'
               : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
           } border border-wsu-border-light disabled:opacity-50`}
           title="Underline"
+          aria-label="Underline"
         >
           <UnderlineIcon className="w-4 h-4" />
         </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleStrike().run()}
-          disabled={!editor.can().chain().focus().toggleStrike().run() || codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
-            editor.isActive('strike')
-              ? 'bg-wsu-crimson text-white'
-              : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
-          } border border-wsu-border-light disabled:opacity-50`}
-          title="Strikethrough"
-        >
-          <Strikethrough className="w-4 h-4" />
-        </button>
-
-        <div className="w-px h-6 bg-wsu-border-light mx-1" />
-
-        {/* Headings */}
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-          disabled={codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
-            editor.isActive('heading', { level: 1 })
-              ? 'bg-wsu-crimson text-white'
-              : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
-          } border border-wsu-border-light disabled:opacity-50`}
-          title="Heading 1"
-        >
-          <Heading1 className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          disabled={codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
-            editor.isActive('heading', { level: 2 })
-              ? 'bg-wsu-crimson text-white'
-              : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
-          } border border-wsu-border-light disabled:opacity-50`}
-          title="Heading 2"
-        >
-          <Heading2 className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-          disabled={codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
-            editor.isActive('heading', { level: 3 })
-              ? 'bg-wsu-crimson text-white'
-              : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
-          } border border-wsu-border-light disabled:opacity-50`}
-          title="Heading 3"
-        >
-          <Heading3 className="w-4 h-4" />
-        </button>
-
-        <div className="w-px h-6 bg-wsu-border-light mx-1" />
-
         {/* Lists */}
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           disabled={codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
+          className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
             editor.isActive('bulletList')
               ? 'bg-wsu-crimson text-white'
               : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
           } border border-wsu-border-light disabled:opacity-50`}
           title="Bullet List"
+          aria-label="Bullet List"
         >
           <List className="w-4 h-4" />
         </button>
@@ -441,12 +388,13 @@ export default function TiptapEditor({
           type="button"
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           disabled={codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
+          className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
             editor.isActive('orderedList')
               ? 'bg-wsu-crimson text-white'
               : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
           } border border-wsu-border-light disabled:opacity-50`}
           title="Numbered List"
+          aria-label="Numbered List"
         >
           <ListOrdered className="w-4 h-4" />
         </button>
@@ -456,8 +404,9 @@ export default function TiptapEditor({
               type="button"
               onClick={() => editor.chain().focus().liftListItem('listItem').run()}
               disabled={!editor.can().liftListItem('listItem') || codeView}
-              className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+              className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
               title="Outdent (Shift+Tab)"
+              aria-label="Outdent (Shift+Tab)"
             >
               <Outdent className="w-4 h-4" />
             </button>
@@ -465,13 +414,16 @@ export default function TiptapEditor({
               type="button"
               onClick={() => editor.chain().focus().sinkListItem('listItem').run()}
               disabled={!editor.can().sinkListItem('listItem') || codeView}
-              className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+              className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
               title="Indent (Tab)"
+              aria-label="Indent (Tab)"
             >
               <Indent className="w-4 h-4" />
             </button>
             <div className="flex items-center gap-1 px-2 border-l border-wsu-border-light">
-              <label htmlFor="tiptap-line-height" className="text-xs text-wsu-text-muted whitespace-nowrap">Line Height:</label>
+              <label htmlFor="tiptap-line-height" className="text-xs text-wsu-text-muted whitespace-nowrap">
+                Line Height:
+              </label>
               <input
                 id="tiptap-line-height"
                 type="number"
@@ -489,11 +441,14 @@ export default function TiptapEditor({
                 step="0.1"
                 className="text-xs border border-wsu-border-light rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-wsu-crimson w-14"
                 title="Line height within list items (1.0-3.0). Controls spacing when text wraps."
+                aria-label="Line height within list items (1.0-3.0). Controls spacing when text wraps."
                 placeholder="1.5"
               />
             </div>
             <div className="flex items-center gap-1 px-2">
-              <label htmlFor="tiptap-item-gap" className="text-xs text-wsu-text-muted whitespace-nowrap">Item Gap:</label>
+              <label htmlFor="tiptap-item-gap" className="text-xs text-wsu-text-muted whitespace-nowrap">
+                Item Gap:
+              </label>
               <input
                 id="tiptap-item-gap"
                 type="number"
@@ -511,55 +466,13 @@ export default function TiptapEditor({
                 step="1"
                 className="text-xs border border-wsu-border-light rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-wsu-crimson w-14"
                 title="Vertical spacing between list items (0-50px)"
+                aria-label="Vertical spacing between list items (0-50px)"
                 placeholder="8"
               />
               <span className="text-xs text-wsu-text-muted">px</span>
             </div>
           </>
         )}
-
-        <div className="w-px h-6 bg-wsu-border-light mx-1" />
-
-        {/* Alignment */}
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().setTextAlign('left').run()}
-          disabled={codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
-            editor.isActive({ textAlign: 'left' })
-              ? 'bg-wsu-crimson text-white'
-              : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
-          } border border-wsu-border-light disabled:opacity-50`}
-          title="Align Left"
-        >
-          <AlignLeft className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().setTextAlign('center').run()}
-          disabled={codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
-            editor.isActive({ textAlign: 'center' })
-              ? 'bg-wsu-crimson text-white'
-              : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
-          } border border-wsu-border-light disabled:opacity-50`}
-          title="Align Center"
-        >
-          <AlignCenter className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().setTextAlign('right').run()}
-          disabled={codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
-            editor.isActive({ textAlign: 'right' })
-              ? 'bg-wsu-crimson text-white'
-              : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
-          } border border-wsu-border-light disabled:opacity-50`}
-          title="Align Right"
-        >
-          <AlignRight className="w-4 h-4" />
-        </button>
 
         <div className="w-px h-6 bg-wsu-border-light mx-1" />
 
@@ -570,12 +483,11 @@ export default function TiptapEditor({
             setLinkPromptOpen(true)
           }}
           disabled={codeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
-            editor.isActive('link')
-              ? 'bg-wsu-crimson text-white'
-              : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
+          className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
+            editor.isActive('link') ? 'bg-wsu-crimson text-white' : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
           } border border-wsu-border-light disabled:opacity-50`}
           title="Insert Link"
+          aria-label="Insert Link"
         >
           <LinkIcon className="w-4 h-4" />
         </button>
@@ -583,114 +495,13 @@ export default function TiptapEditor({
           <button
             type="button"
             onClick={() => editor.chain().focus().unsetLink().run()}
-            className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light"
+            className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light"
             title="Remove Link"
+            aria-label="Remove Link"
           >
             <Unlink className="w-4 h-4" />
           </button>
         )}
-
-        <div className="w-px h-6 bg-wsu-border-light mx-1" />
-
-        {/* Table */}
-        <button
-          type="button"
-          onClick={() =>
-            editor
-              .chain()
-              .focus()
-              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-              .run()
-          }
-          disabled={codeView}
-          className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
-          title="Insert Table"
-        >
-          <TableIcon className="w-4 h-4" />
-        </button>
-        {editor.isActive('table') && !codeView && (
-          <>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().addColumnBefore().run()}
-              disabled={!editor.can().addColumnBefore()}
-              className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
-              title="Add Column Before"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().addColumnAfter().run()}
-              disabled={!editor.can().addColumnAfter()}
-              className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
-              title="Add Column After"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().deleteColumn().run()}
-              disabled={!editor.can().deleteColumn()}
-              className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
-              title="Delete Column"
-            >
-              <Minus className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().addRowBefore().run()}
-              disabled={!editor.can().addRowBefore()}
-              className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
-              title="Add Row Before"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().addRowAfter().run()}
-              disabled={!editor.can().addRowAfter()}
-              className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
-              title="Add Row After"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().deleteRow().run()}
-              disabled={!editor.can().deleteRow()}
-              className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
-              title="Delete Row"
-            >
-              <Minus className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => editor.chain().focus().deleteTable().run()}
-              disabled={!editor.can().deleteTable()}
-              className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
-              title="Delete Table"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </>
-        )}
-
-        <div className="w-px h-6 bg-wsu-border-light mx-1" />
-
-        {/* Code View Toggle */}
-        <button
-          type="button"
-          onClick={handleToggleCodeView}
-          className={`px-2 py-1 text-sm rounded flex items-center justify-center ${
-            codeView
-              ? 'bg-wsu-crimson text-white'
-              : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
-          } border border-wsu-border-light`}
-          title={codeView ? 'Switch to Visual Editor' : 'Switch to HTML Code View'}
-        >
-          {codeView ? <Eye className="w-4 h-4" /> : <Code className="w-4 h-4" />}
-        </button>
 
         <div className="w-px h-6 bg-wsu-border-light mx-1" />
 
@@ -699,8 +510,9 @@ export default function TiptapEditor({
           type="button"
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo() || codeView}
-          className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
-          title="Undo"
+          className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+          title="Undo text"
+          aria-label="Undo text"
         >
           <Undo className="w-4 h-4" />
         </button>
@@ -708,11 +520,230 @@ export default function TiptapEditor({
           type="button"
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo() || codeView}
-          className="px-2 py-1 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
-          title="Redo"
+          className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+          title="Redo text"
+          aria-label="Redo text"
         >
           <Redo className="w-4 h-4" />
         </button>
+        <details className="w-full border-t border-wsu-border-light pt-1">
+          <summary className="inline-flex min-h-11 cursor-pointer items-center font-semibold text-wsu-crimson">
+            More formatting
+          </summary>
+          <div className="flex flex-wrap items-center gap-2 py-2" aria-label="Additional text formatting">
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().toggleStrike().run()}
+              disabled={!editor.can().chain().focus().toggleStrike().run() || codeView}
+              className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
+                editor.isActive('strike')
+                  ? 'bg-wsu-crimson text-white'
+                  : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
+              } border border-wsu-border-light disabled:opacity-50`}
+              title="Strikethrough"
+              aria-label="Strikethrough"
+            >
+              <Strikethrough className="w-4 h-4" />
+            </button>
+
+            <div className="w-px h-6 bg-wsu-border-light mx-1" />
+
+            {/* Headings */}
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+              disabled={codeView}
+              className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
+                editor.isActive('heading', { level: 1 })
+                  ? 'bg-wsu-crimson text-white'
+                  : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
+              } border border-wsu-border-light disabled:opacity-50`}
+              title="Heading 1"
+              aria-label="Heading 1"
+            >
+              <Heading1 className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+              disabled={codeView}
+              className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
+                editor.isActive('heading', { level: 2 })
+                  ? 'bg-wsu-crimson text-white'
+                  : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
+              } border border-wsu-border-light disabled:opacity-50`}
+              title="Heading 2"
+              aria-label="Heading 2"
+            >
+              <Heading2 className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+              disabled={codeView}
+              className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
+                editor.isActive('heading', { level: 3 })
+                  ? 'bg-wsu-crimson text-white'
+                  : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
+              } border border-wsu-border-light disabled:opacity-50`}
+              title="Heading 3"
+              aria-label="Heading 3"
+            >
+              <Heading3 className="w-4 h-4" />
+            </button>
+
+            <div className="w-px h-6 bg-wsu-border-light mx-1" />
+
+            {/* Alignment */}
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().setTextAlign('left').run()}
+              disabled={codeView}
+              className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
+                editor.isActive({ textAlign: 'left' })
+                  ? 'bg-wsu-crimson text-white'
+                  : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
+              } border border-wsu-border-light disabled:opacity-50`}
+              title="Align Left"
+              aria-label="Align Left"
+            >
+              <AlignLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().setTextAlign('center').run()}
+              disabled={codeView}
+              className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
+                editor.isActive({ textAlign: 'center' })
+                  ? 'bg-wsu-crimson text-white'
+                  : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
+              } border border-wsu-border-light disabled:opacity-50`}
+              title="Align Center"
+              aria-label="Align Center"
+            >
+              <AlignCenter className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().setTextAlign('right').run()}
+              disabled={codeView}
+              className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
+                editor.isActive({ textAlign: 'right' })
+                  ? 'bg-wsu-crimson text-white'
+                  : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
+              } border border-wsu-border-light disabled:opacity-50`}
+              title="Align Right"
+              aria-label="Align Right"
+            >
+              <AlignRight className="w-4 h-4" />
+            </button>
+
+            <div className="w-px h-6 bg-wsu-border-light mx-1" />
+
+            {/* Table */}
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+              disabled={codeView}
+              className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+              title="Insert Table"
+              aria-label="Insert Table"
+            >
+              <TableIcon className="w-4 h-4" />
+            </button>
+            {editor.isActive('table') && !codeView && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().addColumnBefore().run()}
+                  disabled={!editor.can().addColumnBefore()}
+                  className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+                  title="Add Column Before"
+                  aria-label="Add Column Before"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().addColumnAfter().run()}
+                  disabled={!editor.can().addColumnAfter()}
+                  className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+                  title="Add Column After"
+                  aria-label="Add Column After"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().deleteColumn().run()}
+                  disabled={!editor.can().deleteColumn()}
+                  className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+                  title="Delete Column"
+                  aria-label="Delete Column"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().addRowBefore().run()}
+                  disabled={!editor.can().addRowBefore()}
+                  className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+                  title="Add Row Before"
+                  aria-label="Add Row Before"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().addRowAfter().run()}
+                  disabled={!editor.can().addRowAfter()}
+                  className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+                  title="Add Row After"
+                  aria-label="Add Row After"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().deleteRow().run()}
+                  disabled={!editor.can().deleteRow()}
+                  className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+                  title="Delete Row"
+                  aria-label="Delete Row"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor.chain().focus().deleteTable().run()}
+                  disabled={!editor.can().deleteTable()}
+                  className="min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center bg-white text-wsu-text-dark hover:bg-wsu-bg-light border border-wsu-border-light disabled:opacity-50"
+                  title="Delete Table"
+                  aria-label="Delete Table"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </>
+            )}
+
+            <div className="w-px h-6 bg-wsu-border-light mx-1" />
+
+            {/* Code View Toggle */}
+            <button
+              type="button"
+              onClick={handleToggleCodeView}
+              className={`min-h-11 min-w-11 px-2 py-2 text-sm rounded flex items-center justify-center ${
+                codeView ? 'bg-wsu-crimson text-white' : 'bg-white text-wsu-text-dark hover:bg-wsu-bg-light'
+              } border border-wsu-border-light`}
+              title={codeView ? 'Switch to Visual Editor' : 'Switch to HTML Code View'}
+              aria-label={codeView ? 'Switch to Visual Editor' : 'Switch to HTML Code View'}
+            >
+              {codeView ? <Eye className="w-4 h-4" /> : <Code className="w-4 h-4" />}
+            </button>
+
+            <div className="w-px h-6 bg-wsu-border-light mx-1" />
+          </div>
+        </details>
       </div>
 
       {/* Editor Content or Code View */}
@@ -737,6 +768,7 @@ export default function TiptapEditor({
       <PromptModal
         isOpen={linkPromptOpen}
         title="Insert Link"
+        aria-label="Insert Link"
         message="Enter the URL for the link:"
         defaultValue={editor.getAttributes('link').href || ''}
         placeholder="https://..."
@@ -751,4 +783,3 @@ export default function TiptapEditor({
     </div>
   )
 }
-

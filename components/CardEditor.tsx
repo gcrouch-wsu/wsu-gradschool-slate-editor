@@ -2,7 +2,8 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useId, useRef, useState } from 'react'
+import { useDialogFocus } from '@/lib/client/use-dialog-focus'
 import type { Card, ContentOrigin, Link, Shadow } from '@/types/newsletter'
 import { Plus, Trash2 } from 'lucide-react'
 import { CTA_BUTTON_DEFAULTS } from '@/lib/config'
@@ -26,16 +27,29 @@ interface CardEditorProps {
   onDelete?: () => void
 }
 
-export default function CardEditor({
-  card,
-  onSave,
-  onCancel,
-  onDelete,
-}: CardEditorProps) {
+export default function CardEditor({ card, onSave, onCancel, onDelete }: CardEditorProps) {
   const [editedCard, setEditedCard] = useState<Card>(card)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  const discardRef = useRef<HTMLButtonElement>(null)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const dirty = JSON.stringify(editedCard) !== JSON.stringify(card)
+  function requestClose() {
+    if (confirmDiscard) {
+      setConfirmDiscard(false)
+      return
+    }
+    if (!dirty) {
+      onCancel()
+      return
+    }
+    setConfirmDiscard(true)
+    requestAnimationFrame(() => discardRef.current?.focus())
+  }
+  useDialogFocus(dialogRef, requestClose)
 
   const updateCard = (updates: Partial<Card>) => {
-    setEditedCard((prev) => ({ ...prev, ...updates } as Card))
+    setEditedCard((prev) => ({ ...prev, ...updates }) as Card)
   }
 
   // Helper to update padding - filters out undefined values
@@ -103,36 +117,68 @@ export default function CardEditor({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 z-10 bg-white border-b border-wsu-border-light p-4 flex items-center justify-between shadow-sm">
-          <h2 className="text-xl font-semibold text-wsu-text-dark">
-            Edit Card ({editedCard.type})
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="bg-white rounded-lg min-w-0 max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+      >
+        <div className="sticky top-0 z-10 bg-white border-b border-wsu-border-light p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+          <h2 id={titleId} className="text-xl font-semibold text-wsu-text-dark">
+            Edit story
           </h2>
           <div className="flex gap-2">
             {onDelete && (
               <button
                 onClick={onDelete}
-                className="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-600 rounded-md hover:bg-red-50 transition-colors flex items-center gap-1"
+                className="min-h-11 inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-red-600 border border-red-600 rounded-md hover:bg-red-50 transition-colors flex items-center gap-1"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
               </button>
             )}
             <button
-              onClick={onCancel}
-              className="px-3 py-1.5 text-sm font-medium text-wsu-text-muted border border-wsu-border-light rounded-md hover:bg-wsu-bg-light transition-colors"
+              onClick={requestClose}
+              className="min-h-11 inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-wsu-text-muted border border-wsu-border-light rounded-md hover:bg-wsu-bg-light transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-wsu-crimson border border-wsu-crimson-dark rounded-md hover:bg-wsu-crimson-dark transition-colors"
+              className="min-h-11 inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-white bg-wsu-crimson border border-wsu-crimson-dark rounded-md hover:bg-wsu-crimson-dark transition-colors"
             >
-              Save
+              Save story
             </button>
           </div>
         </div>
 
+        <div className="px-4 pt-3 text-sm" role="status">
+          Changes here are not saved until you choose Save story. The draft then saves automatically.
+        </div>
+        {confirmDiscard && (
+          <div role="alert" className="m-4 rounded-md border border-amber-300 bg-amber-50 p-3">
+            <p className="font-semibold">Discard unsaved story changes?</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                ref={discardRef}
+                type="button"
+                className="min-h-11 rounded-md border border-wsu-crimson bg-white px-3 font-semibold text-wsu-crimson"
+                onClick={() => setConfirmDiscard(false)}
+              >
+                Keep editing
+              </button>
+              <button
+                type="button"
+                className="min-h-11 rounded-md border border-red-700 bg-white px-3 font-semibold text-red-800"
+                onClick={onCancel}
+              >
+                Discard story changes
+              </button>
+            </div>
+          </div>
+        )}
         <div className="p-6 space-y-4">
           <div>
             <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="content-origin">
@@ -163,10 +209,11 @@ export default function CardEditor({
           {/* Title - Only show for card types that have a title property */}
           {'title' in editedCard && (
             <div>
-              <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
+              <label htmlFor="story-title" className="block mb-1 text-sm font-medium text-wsu-text-dark">
                 Title *
               </label>
               <input
+                id="story-title"
                 type="text"
                 value={editedCard.title || ''}
                 onChange={(e) => updateCard({ title: e.target.value })}
@@ -178,9 +225,7 @@ export default function CardEditor({
 
           {/* Body HTML - Rich Text Editor */}
           <div>
-            <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-              Body Content *
-            </label>
+            <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Body Content *</label>
             <TiptapEditor
               value={editedCard.body_html || ''}
               onChange={(value) => {
@@ -197,17 +242,16 @@ export default function CardEditor({
           </div>
 
           {/* Location, Date, Time (for standard, event, resource cards) */}
-          {(editedCard.type === 'standard' ||
-            editedCard.type === 'event' ||
-            editedCard.type === 'resource') && (
+          {(editedCard.type === 'standard' || editedCard.type === 'event' || editedCard.type === 'resource') && (
             <>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
+                  <label htmlFor="story-location" className="block mb-1 text-sm font-medium text-wsu-text-dark">
                     Location
                   </label>
                   <input
                     type="text"
+                    id="story-location"
                     value={editedCard.location || ''}
                     onChange={(e) => updateCard({ location: e.target.value })}
                     className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
@@ -215,11 +259,12 @@ export default function CardEditor({
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
+                  <label htmlFor="story-date" className="block mb-1 text-sm font-medium text-wsu-text-dark">
                     Date
                   </label>
                   <input
                     type="text"
+                    id="story-date"
                     value={editedCard.date || ''}
                     onChange={(e) => updateCard({ date: e.target.value })}
                     className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
@@ -227,11 +272,12 @@ export default function CardEditor({
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
+                  <label htmlFor="story-time" className="block mb-1 text-sm font-medium text-wsu-text-dark">
                     Time
                   </label>
                   <input
                     type="text"
+                    id="story-time"
                     value={editedCard.time || ''}
                     onChange={(e) => updateCard({ time: e.target.value })}
                     className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
@@ -250,52 +296,37 @@ export default function CardEditor({
                   type="checkbox"
                   id="show_icon"
                   checked={editedCard.show_icon || false}
-                  onChange={(e) =>
-                    updateCard({ show_icon: e.target.checked })
-                  }
+                  onChange={(e) => updateCard({ show_icon: e.target.checked })}
                   className="w-4 h-4 text-wsu-crimson border-wsu-border-light rounded focus:ring-wsu-crimson"
                 />
-                <label
-                  htmlFor="show_icon"
-                  className="text-sm font-medium text-wsu-text-dark"
-                >
+                <label htmlFor="show_icon" className="text-sm font-medium text-wsu-text-dark">
                   Show Icon
                 </label>
               </div>
               {editedCard.show_icon && (
                 <>
                   <div>
-                    <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                      Icon URL
-                    </label>
+                    <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Icon URL</label>
                     <input
                       type="url"
                       value={editedCard.icon_url || ''}
-                      onChange={(e) =>
-                        updateCard({ icon_url: e.target.value })
-                      }
+                      onChange={(e) => updateCard({ icon_url: e.target.value })}
                       className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
                       placeholder="https://..."
                     />
                   </div>
                   <div>
-                    <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                      Icon Alt Text
-                    </label>
+                    <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Icon Alt Text</label>
                     <input
                       type="text"
                       value={editedCard.icon_alt || ''}
-                      onChange={(e) =>
-                        updateCard({ icon_alt: e.target.value })
-                      }
+                      onChange={(e) => updateCard({ icon_alt: e.target.value })}
                       className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
                       placeholder="Icon description"
                     />
                   </div>
                   <div>
-                    <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                      Icon Size (px)
-                    </label>
+                    <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Icon Size (px)</label>
                     <input
                       type="number"
                       min="20"
@@ -318,9 +349,7 @@ export default function CardEditor({
           {editedCard.type === 'letter' && (
             <div className="border-t border-wsu-border-light pt-4 space-y-4">
               <div>
-                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                  Greeting
-                </label>
+                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Greeting</label>
                 <input
                   type="text"
                   value={editedCard.greeting || ''}
@@ -330,9 +359,7 @@ export default function CardEditor({
                 />
               </div>
               <div>
-                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                  Closing
-                </label>
+                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Closing</label>
                 <input
                   type="text"
                   value={editedCard.closing || ''}
@@ -342,15 +369,11 @@ export default function CardEditor({
                 />
               </div>
               <div>
-                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                  Signature Name
-                </label>
+                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Signature Name</label>
                 <input
                   type="text"
                   value={editedCard.signature_name || ''}
-                  onChange={(e) =>
-                    updateCard({ signature_name: e.target.value })
-                  }
+                  onChange={(e) => updateCard({ signature_name: e.target.value })}
                   className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
                   placeholder="e.g., Graduate School Leadership"
                 />
@@ -360,11 +383,7 @@ export default function CardEditor({
                   Signature Lines (one per line)
                 </label>
                 <textarea
-                  value={
-                    editedCard.signature_lines
-                      ? editedCard.signature_lines.join('\n')
-                      : ''
-                  }
+                  value={editedCard.signature_lines ? editedCard.signature_lines.join('\n') : ''}
                   onChange={(e) => {
                     const lines = e.target.value
                       .split('\n')
@@ -376,20 +395,14 @@ export default function CardEditor({
                   className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
                   placeholder="Title&#10;Department&#10;Organization"
                 />
-                <p className="mt-1 text-xs text-wsu-text-muted">
-                  Enter each signature line on a separate line.
-                </p>
+                <p className="mt-1 text-xs text-wsu-text-muted">Enter each signature line on a separate line.</p>
               </div>
               <div>
-                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                  Signature Image URL
-                </label>
+                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Signature Image URL</label>
                 <input
                   type="url"
                   value={editedCard.signature_image_url || ''}
-                  onChange={(e) =>
-                    updateCard({ signature_image_url: e.target.value })
-                  }
+                  onChange={(e) => updateCard({ signature_image_url: e.target.value })}
                   className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
                   placeholder="https://..."
                 />
@@ -403,9 +416,7 @@ export default function CardEditor({
                     <input
                       type="text"
                       value={editedCard.signature_image_alt || ''}
-                      onChange={(e) =>
-                        updateCard({ signature_image_alt: e.target.value })
-                      }
+                      onChange={(e) => updateCard({ signature_image_alt: e.target.value })}
                       className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
                       placeholder="Signature"
                     />
@@ -437,14 +448,19 @@ export default function CardEditor({
             <div className="border-t border-wsu-border-light pt-4 space-y-4">
               {/* Button Style Selector */}
               <div>
-                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                  CTA Style
-                </label>
+                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">CTA Style</label>
                 <select
                   value={editedCard.button_style || CTA_BUTTON_DEFAULTS.style}
                   onChange={(e) =>
                     updateCard({
-                      button_style: e.target.value as 'button' | 'pill' | 'outlined' | 'ghost' | 'arrow' | 'underlined' | 'text-only',
+                      button_style: e.target.value as
+                        | 'button'
+                        | 'pill'
+                        | 'outlined'
+                        | 'ghost'
+                        | 'arrow'
+                        | 'underlined'
+                        | 'text-only',
                     })
                   }
                   className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
@@ -464,9 +480,7 @@ export default function CardEditor({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                    Text Alignment
-                  </label>
+                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Text Alignment</label>
                   <select
                     value={editedCard.text_alignment || 'left'}
                     onChange={(e) =>
@@ -482,17 +496,12 @@ export default function CardEditor({
                   </select>
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                    Button Alignment
-                  </label>
+                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Button Alignment</label>
                   <select
                     value={editedCard.button_alignment || 'center'}
                     onChange={(e) =>
                       updateCard({
-                        button_alignment: e.target.value as
-                          | 'left'
-                          | 'center'
-                          | 'right',
+                        button_alignment: e.target.value as 'left' | 'center' | 'right',
                       })
                     }
                     className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
@@ -505,33 +514,20 @@ export default function CardEditor({
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                    Button BG Color
-                  </label>
+                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Button BG Color</label>
                   <input
                     type="color"
-                    value={
-                      editedCard.button_bg_color || CTA_BUTTON_DEFAULTS.bg_color
-                    }
-                    onChange={(e) =>
-                      updateCard({ button_bg_color: e.target.value })
-                    }
+                    value={editedCard.button_bg_color || CTA_BUTTON_DEFAULTS.bg_color}
+                    onChange={(e) => updateCard({ button_bg_color: e.target.value })}
                     className="w-full h-10 border border-wsu-border-light rounded-md cursor-pointer"
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                    Button Text Color
-                  </label>
+                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Button Text Color</label>
                   <input
                     type="color"
-                    value={
-                      editedCard.button_text_color ||
-                      CTA_BUTTON_DEFAULTS.text_color
-                    }
-                    onChange={(e) =>
-                      updateCard({ button_text_color: e.target.value })
-                    }
+                    value={editedCard.button_text_color || CTA_BUTTON_DEFAULTS.text_color}
+                    onChange={(e) => updateCard({ button_text_color: e.target.value })}
                     className="w-full h-10 border border-wsu-border-light rounded-md cursor-pointer"
                   />
                 </div>
@@ -541,15 +537,10 @@ export default function CardEditor({
                   type="checkbox"
                   id="button_full_width"
                   checked={editedCard.button_full_width || false}
-                  onChange={(e) =>
-                    updateCard({ button_full_width: e.target.checked })
-                  }
+                  onChange={(e) => updateCard({ button_full_width: e.target.checked })}
                   className="w-4 h-4 text-wsu-crimson border-wsu-border-light rounded focus:ring-wsu-crimson"
                 />
-                <label
-                  htmlFor="button_full_width"
-                  className="text-sm font-medium text-wsu-text-dark"
-                >
+                <label htmlFor="button_full_width" className="text-sm font-medium text-wsu-text-dark">
                   Button Full Width
                 </label>
               </div>
@@ -557,24 +548,18 @@ export default function CardEditor({
               {/* Button Typography */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                    Font Size (px)
-                  </label>
+                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Font Size (px)</label>
                   <input
                     type="number"
                     min="10"
                     max="32"
                     value={editedCard.button_font_size || CTA_BUTTON_DEFAULTS.font_size}
-                    onChange={(e) =>
-                      updateCard({ button_font_size: parseInt(e.target.value) || 16 })
-                    }
+                    onChange={(e) => updateCard({ button_font_size: parseInt(e.target.value) || 16 })}
                     className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                    Font Weight
-                  </label>
+                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Font Weight</label>
                   <select
                     value={editedCard.button_font_weight || CTA_BUTTON_DEFAULTS.font_weight}
                     onChange={(e) =>
@@ -594,9 +579,7 @@ export default function CardEditor({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                    Text Transform
-                  </label>
+                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Text Transform</label>
                   <select
                     value={editedCard.button_text_transform || CTA_BUTTON_DEFAULTS.text_transform}
                     onChange={(e) =>
@@ -613,18 +596,18 @@ export default function CardEditor({
                   </select>
                 </div>
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                    Letter Spacing (px)
-                  </label>
+                  <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Letter Spacing (px)</label>
                   <input
                     type="number"
                     min="-2"
                     max="10"
                     step="0.5"
-                    value={editedCard.button_letter_spacing !== undefined ? editedCard.button_letter_spacing : CTA_BUTTON_DEFAULTS.letter_spacing}
-                    onChange={(e) =>
-                      updateCard({ button_letter_spacing: parseFloat(e.target.value) || 0 })
+                    value={
+                      editedCard.button_letter_spacing !== undefined
+                        ? editedCard.button_letter_spacing
+                        : CTA_BUTTON_DEFAULTS.letter_spacing
                     }
+                    onChange={(e) => updateCard({ button_letter_spacing: parseFloat(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
                   />
                 </div>
@@ -632,9 +615,7 @@ export default function CardEditor({
 
               {/* Button Border Style */}
               <div>
-                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                  Border Style
-                </label>
+                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Border Style</label>
                 <select
                   value={editedCard.button_border_style || CTA_BUTTON_DEFAULTS.border_style}
                   onChange={(e) =>
@@ -750,193 +731,178 @@ export default function CardEditor({
             </div>
           )}
 
-          {/* Card Styling Options */}
-          <div className="border-t border-wsu-border-light pt-4 space-y-4">
-            <h3 className="text-sm font-semibold text-wsu-text-dark mb-2">
-              Card Styling
-            </h3>
-            
-            <div>
-              <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                Border Radius (px) - Override
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="50"
-                value={editedCard.border_radius !== undefined ? editedCard.border_radius : ''}
-                onChange={(e) => {
-                  const value = e.target.value
-                  updateCard({
-                    border_radius: value === '' ? undefined : parseInt(value) || 0,
-                  })
-                }}
-                className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
-                placeholder="Use global setting"
-              />
-              <p className="mt-1 text-xs text-wsu-text-muted">
-                Override the global border radius for this card. Leave empty to use the global setting from Settings.
-              </p>
-            </div>
+          <details className="rounded-md border border-wsu-border-light p-3">
+            <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-wsu-crimson">
+              Appearance and spacing
+            </summary>
+            {/* Card Styling Options */}
+            <div className="border-t border-wsu-border-light pt-4 space-y-4">
+              <h3 className="text-sm font-semibold text-wsu-text-dark mb-2">Card Styling</h3>
 
-            <div>
-              <label className="block mb-2 text-sm font-medium text-wsu-text-dark">
-                Card Padding (px) - Override
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                <div>
-                  <label className="block text-xs text-wsu-text-muted mb-1">Top</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={editedCard.padding?.top !== undefined ? editedCard.padding.top : ''}
-                    onChange={(e) => updatePadding('top', e.target.value)}
-                    className="w-full px-2 py-1 text-sm border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
-                    placeholder="Global"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-wsu-text-muted mb-1">Right</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={editedCard.padding?.right !== undefined ? editedCard.padding.right : ''}
-                    onChange={(e) => updatePadding('right', e.target.value)}
-                    className="w-full px-2 py-1 text-sm border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
-                    placeholder="Global"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-wsu-text-muted mb-1">Bottom</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={editedCard.padding?.bottom !== undefined ? editedCard.padding.bottom : ''}
-                    onChange={(e) => updatePadding('bottom', e.target.value)}
-                    className="w-full px-2 py-1 text-sm border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
-                    placeholder="Global"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-wsu-text-muted mb-1">Left</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={editedCard.padding?.left !== undefined ? editedCard.padding.left : ''}
-                    onChange={(e) => updatePadding('left', e.target.value)}
-                    className="w-full px-2 py-1 text-sm border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
-                    placeholder="Global"
-                  />
-                </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
+                  Border Radius (px) - Override
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="50"
+                  value={editedCard.border_radius !== undefined ? editedCard.border_radius : ''}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    updateCard({
+                      border_radius: value === '' ? undefined : parseInt(value) || 0,
+                    })
+                  }}
+                  className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+                  placeholder="Use global setting"
+                />
+                <p className="mt-1 text-xs text-wsu-text-muted">
+                  Override the global border radius for this card. Leave empty to use the global setting from Settings.
+                </p>
               </div>
-              <p className="mt-1 text-xs text-wsu-text-muted">
-                Override the global padding for this card. Leave empty to use global settings. Useful for adding extra space below images or links.
-              </p>
+
+              <div>
+                <label className="block mb-2 text-sm font-medium text-wsu-text-dark">
+                  Card Padding (px) - Override
+                </label>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div>
+                    <label className="block text-xs text-wsu-text-muted mb-1">Top</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editedCard.padding?.top !== undefined ? editedCard.padding.top : ''}
+                      onChange={(e) => updatePadding('top', e.target.value)}
+                      className="w-full px-2 py-1 text-sm border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+                      placeholder="Global"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-wsu-text-muted mb-1">Right</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editedCard.padding?.right !== undefined ? editedCard.padding.right : ''}
+                      onChange={(e) => updatePadding('right', e.target.value)}
+                      className="w-full px-2 py-1 text-sm border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+                      placeholder="Global"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-wsu-text-muted mb-1">Bottom</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editedCard.padding?.bottom !== undefined ? editedCard.padding.bottom : ''}
+                      onChange={(e) => updatePadding('bottom', e.target.value)}
+                      className="w-full px-2 py-1 text-sm border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+                      placeholder="Global"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-wsu-text-muted mb-1">Left</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={editedCard.padding?.left !== undefined ? editedCard.padding.left : ''}
+                      onChange={(e) => updatePadding('left', e.target.value)}
+                      className="w-full px-2 py-1 text-sm border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+                      placeholder="Global"
+                    />
+                  </div>
+                </div>
+                <p className="mt-1 text-xs text-wsu-text-muted">
+                  Override the global padding for this card. Leave empty to use global settings. Useful for adding extra
+                  space below images or links.
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* Table Styling Options */}
-          <div className="border-t border-wsu-border-light pt-4 space-y-4">
-            <h3 className="text-sm font-semibold text-wsu-text-dark mb-2">
-              Table Styling
-            </h3>
-            
-            <div>
-              <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                Border style
-              </label>
-              <select
-                value={editedCard.table_border_style || 'light'}
-                onChange={(e) =>
-                  updateCard({
-                    table_border_style: e.target.value as
-                      | 'none'
-                      | 'light'
-                      | 'medium'
-                      | 'bold',
-                  })
-                }
-                className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
-              >
-                <option value="none">None</option>
-                <option value="light">Light (1px)</option>
-                <option value="medium">Medium (2px)</option>
-                <option value="bold">Bold (3px)</option>
-              </select>
-            </div>
+            {/* Table Styling Options */}
+            <div className="border-t border-wsu-border-light pt-4 space-y-4">
+              <h3 className="text-sm font-semibold text-wsu-text-dark mb-2">Table Styling</h3>
 
-            <ColorPicker
-              label="Border color"
-              value={editedCard.table_border_color || '#d9d9d9'}
-              onChange={(color) => updateCard({ table_border_color: color })}
-            />
+              <div>
+                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Border style</label>
+                <select
+                  value={editedCard.table_border_style || 'light'}
+                  onChange={(e) =>
+                    updateCard({
+                      table_border_style: e.target.value as 'none' | 'light' | 'medium' | 'bold',
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+                >
+                  <option value="none">None</option>
+                  <option value="light">Light (1px)</option>
+                  <option value="medium">Medium (2px)</option>
+                  <option value="bold">Bold (3px)</option>
+                </select>
+              </div>
 
-            <div>
-              <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                Table font size (px)
-              </label>
-              <input
-                type="number"
-                min="10"
-                max="24"
-                value={editedCard.table_font_size || 16}
-                onChange={(e) =>
-                  updateCard({
-                    table_font_size: parseInt(e.target.value) || 16,
-                  })
-                }
-                className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+              <ColorPicker
+                label="Border color"
+                value={editedCard.table_border_color || '#d9d9d9'}
+                onChange={(color) => updateCard({ table_border_color: color })}
+              />
+
+              <div>
+                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Table font size (px)</label>
+                <input
+                  type="number"
+                  min="10"
+                  max="24"
+                  value={editedCard.table_font_size || 16}
+                  onChange={(e) =>
+                    updateCard({
+                      table_font_size: parseInt(e.target.value) || 16,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+                />
+              </div>
+
+              <ColorPicker
+                label="Header background color"
+                value={editedCard.table_header_bg_color || '#f4f4f4'}
+                onChange={(color) => updateCard({ table_header_bg_color: color })}
+              />
+
+              <div>
+                <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Header underline (px)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="10"
+                  value={editedCard.table_header_underline || 0}
+                  onChange={(e) =>
+                    updateCard({
+                      table_header_underline: parseInt(e.target.value) || 0,
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+                />
+              </div>
+
+              <ColorPicker
+                label="Header underline color"
+                value={editedCard.table_header_underline_color || '#d9d9d9'}
+                onChange={(color) => updateCard({ table_header_underline_color: color })}
               />
             </div>
-
-            <ColorPicker
-              label="Header background color"
-              value={editedCard.table_header_bg_color || '#f4f4f4'}
-              onChange={(color) =>
-                updateCard({ table_header_bg_color: color })
-              }
-            />
-
-            <div>
-              <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-                Header underline (px)
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="10"
-                value={editedCard.table_header_underline || 0}
-                onChange={(e) =>
-                  updateCard({
-                    table_header_underline: parseInt(e.target.value) || 0,
-                  })
-                }
-                className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
-              />
-            </div>
-
-            <ColorPicker
-              label="Header underline color"
-              value={editedCard.table_header_underline_color || '#d9d9d9'}
-              onChange={(color) =>
-                updateCard({ table_header_underline_color: color })
-              }
-            />
-          </div>
-
+          </details>
           {/* Links */}
           <div className="border-t border-wsu-border-light pt-4">
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-wsu-text-dark">
-                Links
-              </label>
+              <label className="text-sm font-medium text-wsu-text-dark">Links</label>
               <button
                 onClick={addLink}
-                className="px-2 py-1 text-xs font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors flex items-center gap-1"
+                className="inline-flex min-h-11 items-center justify-center px-3 py-2 text-sm font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors flex items-center gap-1"
               >
                 <Plus className="w-3 h-3" />
                 Add Link
@@ -945,34 +911,28 @@ export default function CardEditor({
             {editedCard.links && editedCard.links.length > 0 ? (
               <div className="space-y-2">
                 {editedCard.links.map((link, index) => (
-                  <div
-                    key={index}
-                    className="flex gap-2 p-2 border border-wsu-border-light rounded-md"
-                  >
-                    <div className="flex-1 grid grid-cols-2 gap-2">
+                  <div key={index} className="flex gap-2 p-2 border border-wsu-border-light rounded-md">
+                    <div className="flex-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <input
                         type="text"
                         value={link.label || ''}
-                        onChange={(e) =>
-                          updateLink(index, { ...link, label: e.target.value })
-                        }
+                        onChange={(e) => updateLink(index, { ...link, label: e.target.value })}
                         placeholder="Link label"
                         className="px-2 py-1 text-sm border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
                       />
                       <input
                         type="url"
                         value={link.url || ''}
-                        onChange={(e) =>
-                          updateLink(index, { ...link, url: e.target.value })
-                        }
+                        onChange={(e) => updateLink(index, { ...link, url: e.target.value })}
                         placeholder="https://..."
                         className="px-2 py-1 text-sm border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
                       />
                     </div>
                     <button
                       onClick={() => removeLink(index)}
-                      className="p-1 text-red-600 hover:text-red-700"
+                      className="inline-flex min-h-11 min-w-11 items-center justify-center text-red-600 hover:text-red-700"
                       title="Remove link"
+                      aria-label={`Remove link ${index + 1}`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -980,9 +940,7 @@ export default function CardEditor({
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-wsu-text-muted">
-                No links. Click &quot;Add Link&quot; to add one.
-              </p>
+              <p className="text-xs text-wsu-text-muted">No links. Click &quot;Add Link&quot; to add one.</p>
             )}
           </div>
         </div>
@@ -990,4 +948,3 @@ export default function CardEditor({
     </div>
   )
 }
-

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { createServer } from 'node:net'
 import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -56,6 +57,7 @@ import type { NewsletterData } from '@/types/newsletter'
 let server: EmbeddedPostgres
 let databaseDir = ''
 let databaseUrl = ''
+let databasePort = 0
 
 function titled(content: NewsletterData, title: string): NewsletterData {
   return { ...content, masthead: { ...content.masthead, title } }
@@ -118,10 +120,17 @@ async function saveCount(id: string) {
 }
 
 beforeAll(async () => {
+  const listener = createServer()
+  await new Promise<void>((resolve, reject) => {
+    listener.once('error', reject)
+    listener.listen(0, '127.0.0.1', resolve)
+  })
+  databasePort = (listener.address() as { port: number }).port
+  await new Promise<void>((resolve, reject) => listener.close((error) => (error ? reject(error) : resolve())))
   databaseDir = await mkdtemp(join(tmpdir(), 'slate-editor-pg-'))
   server = new EmbeddedPostgres({
     databaseDir,
-    port: 55432,
+    port: databasePort,
     user: 'postgres',
     password: 'password',
     persistent: true,
@@ -131,7 +140,7 @@ beforeAll(async () => {
   await server.initialise()
   await server.start()
   await server.createDatabase('slate_editor_test')
-  databaseUrl = 'postgresql://postgres:password@127.0.0.1:55432/slate_editor_test'
+  databaseUrl = `postgresql://postgres:password@127.0.0.1:${databasePort}/slate_editor_test`
   process.env.DATABASE_URL = databaseUrl
   process.env.AUTH_MODE = 'development'
   process.env.SESSION_SECRET = 'test-session-secret-with-32-characters'
@@ -150,7 +159,7 @@ test('migrations apply once, fail closed, and serialize', async () => {
   expect(Number(applied.rows[0].count)).toBe(4)
 
   await server.createDatabase('slate_editor_race')
-  const raceUrl = 'postgresql://postgres:password@127.0.0.1:55432/slate_editor_race'
+  const raceUrl = `postgresql://postgres:password@127.0.0.1:${databasePort}/slate_editor_race`
   await Promise.all([migrateDatabase(raceUrl), migrateDatabase(raceUrl)])
   const client = new pg.Client({ connectionString: raceUrl })
   await client.connect()

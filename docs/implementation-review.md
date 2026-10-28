@@ -55,9 +55,11 @@ Suggestions are schema-checked. Unsafe HTML, unsupported fields, dropped URLs or
 
 Before a suggestion is requested, pending saves are flushed. The client keeps the newsletter id, target, save version, and a canonical snapshot. Apply rechecks the live lease and save version with the server. Apply is refused if the draft, target, lease, version, or field text changed, including after typing, reordering, deletion, a progress change, or another editor taking over. Repeated imported section keys are disambiguated by position and the frozen document. The server also checks authority after generation. Discard and Escape abort the browser request; late responses cannot populate a reopened dialog. The dialog traps keyboard focus.
 
-Suggestion comparison is display-only until Apply. The default Changes view renders the original wording with proposed edits: removed text is struck out on a light red background, added text is underlined on a light green background, and unchanged text is plain. A visible legend names both marks. Differences are word-level, with spaces kept on the neighboring word and punctuation compared separately, so one changed sentence does not strike the rest of the paragraph. A fully rewritten sentence is shown as one removed run and one added run. The view switcher stays available: choose Changes to leave Side by side, or choose Side by side again. Arrow keys also move between the two views. Side by side shows rendered Original and Proposed content, stacked on narrow screens. Links in the comparison do not navigate away from the dialog. Headlines, preheaders, and review findings that propose replacement wording use the same comparison.
+Suggestion comparison is display-only until Apply. The default Changes view renders word-level additions and removals in their paragraph or supported content block. Each passage has Review edit controls; clicking or tapping a marked text run, or right-clicking it, also opens its inline choices. Accept keeps the proposed wording; Pass keeps the original. Decisions remain visible through the passage controls. Reset choice clears that decision, retains focus in the choices, and never edits the newsletter. Escape first closes the choices and returns focus to Review edit; a subsequent Escape closes the AI dialog.
 
-Accept and Pass stay in an Individual edits section under the view switcher, in both Changes and Side by side. Each edit has Accept and Pass. Accept keeps the proposed wording for that edit. Pass keeps the original wording. Choosing the same button again clears that choice. Edits that have not been passed are included. Apply writes that result as one Undo step. If nothing was passed, Apply saves the proposed source string unchanged. Generating a suggestion, switching views, and marking edits do not modify or save the draft. Diff annotations never enter the saved document, preview, export, or Slate HTML. A passed edit is rebuilt from the parsed wording and then sanitized with the existing rich-HTML rules.
+Side by side aligns original and proposed passages in paired columns, stacking on phones. Choices stay with each passage and scroll away with it. Replacement blocks sharing one edit ID stay in the same passage. Lists and tables retain their supported structure. Neither view uses a pinned or separately scrolling edit list. Selecting an already selected view leaves it selected; arrow keys move between views. New proposal source strings start a fresh comparison review.
+
+The dialog widens to `max-w-6xl` after results arrive. Its instruction controls collapse under Adjust instruction and AI action. Discard remains in a persistent footer, with Apply suggestion there for a single proposal; alternatives and review findings retain their own Apply action to identify the selected result. Accepted, passed, and unreviewed counts explain that unreviewed edits are included. The chosen mix remains one editor Undo step. When no edit is passed, Apply preserves the exact proposed source string. Comparison marks never enter saved content, preview, export, or Slate HTML.
 
 The comparison parses sanitized HTML with the existing `sanitizeRichHtml` rules and `htmlparser2`. It does not insert raw HTML. The `diff` package compares the parsed word tokens. That is its only job.
 
@@ -85,22 +87,34 @@ An independent pass inspected the uncommitted implementation, including the prog
 
 Progress retries, duplicate section keys, stale AI generation and Apply, cancellation, dialog focus and Escape, and transactional purge with the administrator audit row matched the intended behavior and were left in place. No live gateway request was made.
 
+## Editor usability build
+
+- The issue title identifies the draft first; the email heading appears secondarily. Change progress groups the existing progress actions and disables transitions to the current state.
+- Save status, Undo, Redo, Save and finish editing, accessibility, and export stay in a sticky draft-action bar. Finish editing remains the primary action. The phone Edit draft / Preview switch stays available at the bottom and visibly indicates the selected view.
+- Story and closure modals explain their local save boundary. Save story / Save closure hand the local changes to normal draft autosave. Cancel or Escape asks before discarding changed fields. Keyboard focus stays in the topmost modal and returns to the opener on close.
+- Story rows wrap their titles and put actions underneath on phones. Edit has visible text. Move controls, drag grips, add actions, story-modal controls, and text-formatting buttons use larger targets. Text Undo/Redo are named distinctly from newsletter Undo/Redo.
+- Common text tools stay exposed; More formatting contains headings, alignment, tables, strikethrough, and HTML view. Explicit Link and Underline extensions are retained with their duplicate StarterKit registrations disabled.
+- Issue metadata appears first in Masthead. Appearance and spacing collapse in story editing. Location/date/time and link fields stack on phones, and common writing fields have accessible labels.
+
+Lease/version guards, proposal cancellation and stale checks, contributed-voice handling, same-origin authorization, sanitization, preview isolation, and saved email rendering were preserved. No dependencies, authentication configuration, or migrations were changed.
+
 ## Verification
 
-Commands run from the repository root on October 27, 2026, after individual edit choices and the Side by side return. The database suite was run separately from the browser suite. The production build was run after the Playwright dev server had exited.
+Final local verification on October 27, 2026:
 
 | Command | Result |
 | --- | --- |
 | `npm run check` | Exit 0 |
-| `npm run lint` | Exit 0, 0 errors, 9 existing warnings in `app/admin/page.tsx` and `app/editor-page.tsx` |
-| `npx vitest run --maxWorkers=1` | Exit 0. 8 files, 69 tests passed, including migration `004_issue_progress.sql` |
-| `npm run test:browser` | Exit 0. 10 passed (1.4m), including `editing.spec.ts`, the workflow suite, and the three-template HTML export check |
-| `npm run build` | Exit 0. Compiled, typechecked, and generated pages |
-| `style.md` in `.next/server/app/api/newsletters/[id]/ai/route.js.nft.json` | Present |
+| `npm run lint` | Exit 0; no errors, the same nine existing warnings |
+| `npx vitest run --maxWorkers=1` | Exit 0; 8 files, 70 tests passed |
+| `npm run test:browser` | Exit 0; all 12 tests passed (1.2m) |
+| `npm run build` | Exit 0; compiled, typechecked, and generated pages |
 
-Unit tests cover word changes, insertions, deletions, unchanged text, entities, punctuation, repeated words, lists, links, tables, rewritten sentences, rejected unsafe markup, and accept or pass of individual edits, plus the earlier progress, lease, purge, and AI route checks. Browser coverage includes returning from Side by side by click, by choosing it again, and by arrow key, stacked comparison at a 390px width, Apply of an untouched suggestion saving the proposed source, Apply of one passed edit and one accepted edit, Undo restoring the original, and stale suggestions staying blocked. `tests/browser/library.spec.ts` runs automated WCAG checks on exported Friday Focus, Briefing, and Slate Campaign HTML. Those checks are not Slate or email-client rendering. AI tests use mocked provider responses. No paid or live gateway request was made. Live AI and Slate/email-client rendering remain unverified.
+Browser coverage includes long passage comparisons, mark-click and keyboard access, counts, Reset choice, nested Escape, choices scrolling away with their passage, phone stacking, unchanged source before Apply, partial acceptance, whole-field Undo, modal save/discard/focus behavior, and the existing library, takeover, recovery, session-revocation, and export flows. Screenshots of desktop and phone comparisons and the phone story modal were inspected. All three exported templates passed the existing automated WCAG checks.
 
-Run the database suite separately from browser tests because migration tests temporarily rewrite SQL fixtures in the checkout. Do not run `next build` while the Playwright dev server is running. Playwright output is written outside the repo (`os.tmpdir()/slate-editor-playwright`). Writing it inside the project made Turbopack rebuild and reload the local editor while the preview test was open.
+Earlier browser runs exposed nested Escape handling and lost focus when Reset choice removed its own button; both were corrected before the final full pass. The fixed phone navigation also overlapped Next.js's development indicator, so the test server disables that indicator using `SLATE_BROWSER_TEST`; production behavior is unaffected. The takeover test now verifies a rejected stale API save and the disabled old tab instead of racing to type into an already disabled input. The database suite now allocates an available temporary port after the previous fixed port was found occupied; the existing process was left running.
+
+Run database tests separately from browser tests because migration tests temporarily rewrite SQL fixtures. Run builds only after the browser dev server exits. Playwright results and screenshots remain outside the repository. AI responses were mocked; no paid/live request, credential change, commit, push, or production deployment was performed in this UX pass.
 
 ## Limitations
 

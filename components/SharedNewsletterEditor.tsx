@@ -847,10 +847,12 @@ export default function SharedNewsletterEditor({
           >
             All newsletters
           </Link>
-          <h1 className="text-xl font-semibold break-words">{state.masthead.title || 'Newsletter'}</h1>
+          <h1 className="text-xl font-semibold break-words">
+            {state.issue?.title || state.masthead.title || 'Newsletter'}
+          </h1>
           <p className="text-sm">
             <span className="font-semibold">{progressLabels[progress]}</span>
-            {state.issue?.title ? ` · ${state.issue.title}` : ''}
+            {state.issue?.title ? ` · ${state.masthead.title}` : ''}
             {changedSinceSent ? ' · Changed since sent' : ''}
           </p>
           {hasSentRecord && (
@@ -860,99 +862,107 @@ export default function SharedNewsletterEditor({
               </Link>
             </p>
           )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              className={secondary}
-              type="button"
-              disabled={!canWrite || busy !== null}
-              onClick={() => void changeProgress('ready')}
-            >
-              Mark ready for Slate
-            </button>
-            <button
-              className={secondary}
-              type="button"
-              disabled={!canWrite || busy !== null}
-              onClick={() => void changeProgress('draft')}
-            >
-              Return to draft
-            </button>
-            <button
-              className={secondary}
-              type="button"
-              disabled={!canWrite || busy !== null}
-              onClick={() => setSentPrompt(true)}
-            >
-              Mark as sent via Slate
-            </button>
-          </div>
+          <details className="mt-2">
+            <summary className="inline-flex min-h-11 cursor-pointer items-center font-semibold text-wsu-crimson">
+              Change progress
+            </summary>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <button
+                className={secondary}
+                type="button"
+                disabled={!canWrite || busy !== null || progress === 'ready'}
+                onClick={() => void changeProgress('ready')}
+              >
+                Mark ready for Slate
+              </button>
+              <button
+                className={secondary}
+                type="button"
+                disabled={!canWrite || busy !== null || progress === 'draft'}
+                onClick={() => void changeProgress('draft')}
+              >
+                Return to draft
+              </button>
+              <button
+                className={secondary}
+                type="button"
+                disabled={!canWrite || busy !== null}
+                onClick={() => setSentPrompt(true)}
+              >
+                Mark as sent via Slate
+              </button>
+            </div>
+          </details>
           <p className="text-sm text-wsu-text-muted">
             Changes save automatically. Finish editing to make this draft available to the next person. Ready for Slate
             is a review choice, not a completed check. Copying or exporting HTML does not mark this as sent.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0 lg:max-w-xl">
-          <span role="status" aria-live="polite" data-testid="save-status" className="w-full text-sm font-medium">
-            {statusLabel}
-          </span>
-          <button
-            className={secondary}
-            type="button"
-            onClick={undo}
-            disabled={!canUndo || !canWrite || busy !== null || progressPending}
-          >
-            Undo
+      </header>
+      <div
+        aria-label="Draft actions"
+        className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-wsu-border-light bg-white px-4 py-2 shadow-sm"
+      >
+        <span role="status" aria-live="polite" data-testid="save-status" className="w-full text-sm font-medium">
+          {statusLabel}
+        </span>
+        <button
+          className={secondary}
+          type="button"
+          onClick={undo}
+          disabled={!canUndo || !canWrite || busy !== null || progressPending}
+        >
+          Undo
+        </button>
+        <button
+          className={secondary}
+          type="button"
+          onClick={redo}
+          disabled={!canRedo || !canWrite || busy !== null || progressPending}
+        >
+          Redo
+        </button>
+        {!canWrite && banner !== 'connecting' && banner !== 'deleted' && banner !== 'session_expired' && (
+          <button className={secondary} disabled={busy !== null} type="button" onClick={() => void takeOver()}>
+            Take over editing
           </button>
-          <button
-            className={secondary}
-            type="button"
-            onClick={redo}
-            disabled={!canRedo || !canWrite || busy !== null || progressPending}
-          >
-            Redo
+        )}
+        {canWrite && (
+          <button className={primary} type="button" disabled={busy !== null} onClick={() => void finish()}>
+            Save and finish editing
           </button>
-          {!canWrite && banner !== 'connecting' && banner !== 'deleted' && banner !== 'session_expired' && (
-            <button className={secondary} disabled={busy !== null} type="button" onClick={() => void takeOver()}>
-              Take over editing
-            </button>
-          )}
-          {canWrite && (
-            <button className={primary} type="button" disabled={busy !== null} onClick={() => void finish()}>
-              Save and finish editing
-            </button>
-          )}
-          {banner === 'release_pending' && (
-            <button
-              className={primary}
-              type="button"
-              disabled={busy !== null}
-              onClick={() =>
-                void operation('Releasing editing…', async () => {
-                  await release()
-                })
-              }
-            >
-              Retry lease release
-            </button>
-          )}
-          <button
-            className={secondary}
-            type="button"
-            disabled={busy !== null || banner === 'connecting' || banner === 'deleted'}
-            onClick={() => void checkAccessibility()}
-          >
-            Check accessibility
-          </button>
+        )}
+        {banner === 'release_pending' && (
           <button
             className={primary}
             type="button"
-            disabled={busy !== null || banner === 'connecting' || banner === 'deleted' || banner === 'session_expired'}
-            onClick={() => void exportHtml()}
+            disabled={busy !== null}
+            onClick={() =>
+              void operation('Releasing editing…', async () => {
+                await release()
+              })
+            }
           >
-            Export HTML
+            Retry lease release
           </button>
-        </div>
-      </header>
+        )}
+        <button
+          className={secondary}
+          type="button"
+          disabled={busy !== null || banner === 'connecting' || banner === 'deleted'}
+          onClick={() => void checkAccessibility()}
+        >
+          Check accessibility
+        </button>
+        <button
+          className={secondary}
+          type="button"
+          disabled={busy !== null || banner === 'connecting' || banner === 'deleted' || banner === 'session_expired'}
+          onClick={() => void exportHtml()}
+        >
+          Export HTML
+        </button>
+      </div>
       <div className="px-4 space-y-2">
         {progressPending && !busy && (
           <div role="alert" className="py-2">
@@ -1038,9 +1048,12 @@ export default function SharedNewsletterEditor({
           </section>
         )}
       </div>
-      <div className="flex gap-2 p-4 lg:hidden" aria-label="Editor view">
+      <div
+        className="fixed inset-x-0 bottom-0 z-30 flex gap-2 border-t border-wsu-border-light bg-white p-2 shadow-lg lg:hidden"
+        aria-label="Editor view"
+      >
         <button
-          className={secondary}
+          className={mobileView === 'edit' ? primary : secondary}
           type="button"
           aria-pressed={mobileView === 'edit'}
           onClick={() => setMobileView('edit')}
@@ -1048,7 +1061,7 @@ export default function SharedNewsletterEditor({
           Edit draft
         </button>
         <button
-          className={secondary}
+          className={mobileView === 'preview' ? primary : secondary}
           type="button"
           aria-pressed={mobileView === 'preview'}
           onClick={() => setMobileView('preview')}
@@ -1056,7 +1069,7 @@ export default function SharedNewsletterEditor({
           Preview
         </button>
       </div>
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-w-0">
+      <main className="flex-1 grid grid-cols-1 pb-20 lg:pb-0 lg:grid-cols-2 min-w-0">
         <div className={`min-w-0 ${mobileView === 'edit' ? '' : 'hidden lg:block'}`}>
           <EditorPanel
             state={state}

@@ -64,11 +64,14 @@ export default function AiAssistDialog({
     const previous = document.activeElement as HTMLElement | null
     dialogRef.current?.focus()
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
       if (event.key === 'Escape') onDiscard()
       if (event.key !== 'Tab') return
-      const elements = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href]',
-      )
+      const elements = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [href]',
+        ) ?? [],
+      ).filter((element) => element.getClientRects().length > 0)
       if (!elements?.length) {
         event.preventDefault()
         dialogRef.current?.focus()
@@ -99,137 +102,189 @@ export default function AiAssistDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="max-h-[90vh] w-full min-w-0 max-w-2xl overflow-x-hidden overflow-y-auto rounded-lg bg-white p-4 shadow-lg"
+        className={`flex max-h-[95dvh] w-full min-w-0 flex-col overflow-hidden rounded-lg bg-white shadow-lg ${suggestions.length || findings.length ? 'max-w-6xl' : 'max-w-2xl'}`}
       >
-        <h2 id={titleId} className="text-lg font-semibold">
-          {title}
-        </h2>
-        <p className="mt-1 text-sm text-wsu-text-muted">
-          Suggestions do not change the draft until you apply one. The editorial guide remains authoritative, and this
-          does not certify accessibility or mark the newsletter as sent.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="AI action">
-          {actions.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`${button} ${action === item.id ? 'border-wsu-crimson bg-wsu-crimson text-white' : 'border-wsu-crimson bg-white text-wsu-crimson'}`}
-              aria-pressed={action === item.id}
-              disabled={busy}
-              onClick={() => onAction(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <label className="mt-3 block text-sm font-medium" htmlFor="ai-instruction">
-          Optional instruction
-        </label>
-        <textarea
-          id="ai-instruction"
-          value={instruction}
-          maxLength={1000}
-          disabled={busy}
-          onChange={(event) => onInstruction(event.target.value)}
-          className="mt-1 min-h-20 w-full rounded-md border border-wsu-border-light px-3 py-2"
-        />
-        {showHouseStyle && (
-          <label className="mt-3 flex min-h-11 items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={applyHouseStyle}
-              disabled={busy}
-              onChange={(event) => onHouseStyle(event.target.checked)}
-            />
-            Apply full house style
-          </label>
-        )}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className={`${button} border-wsu-crimson bg-wsu-crimson text-white`}
-            disabled={busy}
-            onClick={onGenerate}
-          >
-            {busy
-              ? 'Preparing suggestion…'
-              : suggestions.length || findings.length
-                ? 'Try again'
-                : 'Prepare suggestion'}
-          </button>
-          <button type="button" className={`${button} border-wsu-border-light bg-white`} onClick={onDiscard}>
-            Discard
-          </button>
-        </div>
-        <div role="status" aria-live="polite" className="mt-2 text-sm">
-          {busy ? 'Preparing suggestion…' : ''}
-          {!busy && (guideVersion || model) ? `Guide ${guideVersion}${model ? `, model ${model}` : ''}` : ''}
-        </div>
-        {error && (
-          <p role="alert" className="mt-2 text-red-800">
-            {error}
+        <div className="shrink-0 border-b border-wsu-border-light p-4">
+          <h2 id={titleId} className="text-lg font-semibold">
+            {title}
+          </h2>
+          <p className="mt-1 text-sm text-wsu-text-muted">
+            Suggestions do not change the draft until you apply one. The editorial guide remains authoritative, and this
+            does not certify accessibility or mark the newsletter as sent.
           </p>
-        )}
-        {!busy && action === 'review' && guideVersion && findings.length === 0 && !error && (
-          <p className="mt-3" role="status">
-            The AI review returned no findings. Human review and accessibility checks are still needed.
-          </p>
-        )}
-        <ul className="mt-3 space-y-3">
-          {(Array.isArray(suggestions) ? suggestions : []).map((suggestion, index) => (
-            <li key={index} className="min-w-0 rounded-md border border-wsu-border-light p-3">
-              <SuggestionComparison
-                original={originalText}
-                proposed={suggestion.proposed}
-                plain={action === 'headlines' || action === 'preheader'}
-                onResolve={(text) => remember(`suggestion-${index}`, text)}
-              />
-              <p className="mt-2 text-sm text-wsu-text-muted">{suggestion.reason}</p>
-              <button
-                type="button"
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <details open={!suggestions.length && !findings.length} className="mb-3">
+            <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-wsu-crimson">
+              Adjust instruction and AI action
+            </summary>
+            <div className="pt-2">
+              <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="AI action">
+                {actions.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`${button} ${action === item.id ? 'border-wsu-crimson bg-wsu-crimson text-white' : 'border-wsu-crimson bg-white text-wsu-crimson'}`}
+                    aria-pressed={action === item.id}
+                    disabled={busy}
+                    onClick={() => onAction(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <label className="mt-3 block text-sm font-medium" htmlFor="ai-instruction">
+                Optional instruction
+              </label>
+              <textarea
+                id="ai-instruction"
+                value={instruction}
+                maxLength={1000}
                 disabled={busy}
-                className={`${button} mt-2 border-wsu-crimson bg-white text-wsu-crimson`}
-                onClick={() =>
-                  onApply({ ...suggestion, proposed: chosen.current.get(`suggestion-${index}`) ?? suggestion.proposed })
-                }
-              >
-                Apply suggestion
-              </button>
-            </li>
-          ))}
-          {(Array.isArray(findings) ? findings : []).map((finding, index) => (
-            <li key={index} className="min-w-0 rounded-md border border-wsu-border-light p-3">
-              <p className="text-sm font-semibold">
-                {finding.sectionTitle} / {finding.cardTitle} / {finding.field}
-              </p>
-              <p className="mt-1 text-sm">{finding.summary}</p>
-              {finding.proposed && (
-                <SuggestionComparison
-                  original={finding.originalText}
-                  proposed={finding.proposed}
-                  plain={finding.field !== 'body_html'}
-                  onResolve={(text) => remember(`finding-${index}`, text)}
-                />
+                onChange={(event) => onInstruction(event.target.value)}
+                className="mt-1 min-h-20 w-full rounded-md border border-wsu-border-light px-3 py-2"
+              />
+              {showHouseStyle && (
+                <label className="mt-3 flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={applyHouseStyle}
+                    disabled={busy}
+                    onChange={(event) => onHouseStyle(event.target.checked)}
+                  />
+                  Apply full house style
+                </label>
               )}
-              <p className="mt-2 text-sm text-wsu-text-muted">{finding.reason}</p>
-              {finding.proposed && (
+            </div>
+          </details>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={`${button} border-wsu-crimson bg-wsu-crimson text-white`}
+              disabled={busy}
+              onClick={() => {
+                chosen.current.clear()
+                onGenerate()
+              }}
+            >
+              {busy
+                ? 'Preparing suggestion…'
+                : suggestions.length || findings.length
+                  ? 'Try again'
+                  : 'Prepare suggestion'}
+            </button>
+          </div>
+          <div role="status" aria-live="polite" className="mt-2 text-sm">
+            {busy ? 'Preparing suggestion…' : ''}
+            {!busy && (guideVersion || model) ? `Guide ${guideVersion}${model ? `, model ${model}` : ''}` : ''}
+          </div>
+          {error && (
+            <p role="alert" className="mt-2 text-red-800">
+              {error}
+            </p>
+          )}
+          {!busy && action === 'review' && guideVersion && findings.length === 0 && !error && (
+            <p className="mt-3" role="status">
+              The AI review returned no findings. Human review and accessibility checks are still needed.
+            </p>
+          )}
+          <ul className="mt-3 space-y-3">
+            {(Array.isArray(suggestions) ? suggestions : []).map((suggestion, index) => (
+              <li key={index} className="min-w-0 rounded-md border border-wsu-border-light p-3">
+                <SuggestionComparison
+                  original={originalText}
+                  proposed={suggestion.proposed}
+                  plain={action === 'headlines' || action === 'preheader'}
+                  onResolve={(text) => remember(JSON.stringify([originalText, suggestion.proposed, index]), text)}
+                />
+                <p className="mt-2 text-sm text-wsu-text-muted">{suggestion.reason}</p>
+                {suggestions.length > 1 && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={`${button} mt-2 border-wsu-crimson bg-white text-wsu-crimson`}
+                    onClick={() =>
+                      onApply({
+                        ...suggestion,
+                        proposed:
+                          chosen.current.get(JSON.stringify([originalText, suggestion.proposed, index])) ??
+                          suggestion.proposed,
+                      })
+                    }
+                  >
+                    Apply suggestion
+                  </button>
+                )}
+              </li>
+            ))}
+            {(Array.isArray(findings) ? findings : []).map((finding, index) => (
+              <li key={index} className="min-w-0 rounded-md border border-wsu-border-light p-3">
+                <p className="text-sm font-semibold">
+                  {finding.sectionTitle} / {finding.cardTitle} / {finding.field}
+                </p>
+                <p className="mt-1 text-sm">{finding.summary}</p>
+                {finding.proposed && (
+                  <SuggestionComparison
+                    original={finding.originalText}
+                    proposed={finding.proposed}
+                    plain={finding.field !== 'body_html'}
+                    onResolve={(text) =>
+                      remember(JSON.stringify([finding.originalText, finding.proposed, index]), text)
+                    }
+                  />
+                )}
+                <p className="mt-2 text-sm text-wsu-text-muted">{finding.reason}</p>
+                {finding.proposed && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={`${button} mt-2 border-wsu-crimson bg-white text-wsu-crimson`}
+                    onClick={() =>
+                      onApplyFinding({
+                        ...finding,
+                        proposed:
+                          chosen.current.get(JSON.stringify([finding.originalText, finding.proposed, index])) ??
+                          finding.proposed,
+                      })
+                    }
+                  >
+                    Apply suggestion
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <footer className="shrink-0 border-t border-wsu-border-light bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button type="button" className={`${button} border-wsu-border-light bg-white`} onClick={onDiscard}>
+              Discard
+            </button>
+            {suggestions.length === 1 && (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm">Unreviewed edits will also be included.</p>
                 <button
                   type="button"
                   disabled={busy}
-                  className={`${button} mt-2 border-wsu-crimson bg-white text-wsu-crimson`}
+                  className={`${button} border-wsu-crimson bg-wsu-crimson text-white`}
                   onClick={() =>
-                    onApplyFinding({
-                      ...finding,
-                      proposed: chosen.current.get(`finding-${index}`) ?? finding.proposed,
+                    onApply({
+                      ...suggestions[0],
+                      proposed:
+                        chosen.current.get(JSON.stringify([originalText, suggestions[0].proposed, 0])) ??
+                        suggestions[0].proposed,
                     })
                   }
                 >
                   Apply suggestion
                 </button>
-              )}
-            </li>
-          ))}
-        </ul>
+              </div>
+            )}
+            {(suggestions.length > 1 || findings.length > 0) && (
+              <p className="text-sm">Apply a suggestion above. Unreviewed edits in it will also be included.</p>
+            )}
+          </div>
+        </footer>
       </div>
     </div>
   )

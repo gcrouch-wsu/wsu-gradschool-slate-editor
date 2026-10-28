@@ -29,10 +29,7 @@ import { CSS } from '@dnd-kit/utilities'
 
 interface SectionsEditorProps {
   state: NewsletterData
-  updateState: (
-    updater: (prev: NewsletterData) => NewsletterData,
-    pushHistory?: boolean
-  ) => void
+  updateState: (updater: (prev: NewsletterData) => NewsletterData, pushHistory?: boolean) => void
   onAssist?: (sectionIndex: number, cardIndex: number) => void
 }
 
@@ -88,14 +85,9 @@ function SortableSectionItem({
   children: React.ReactNode
 }) {
   const label = section.title?.trim() || section.key || `section ${sectionIndex + 1}`
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: `section-${sectionIndex}` })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `section-${sectionIndex}`,
+  })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -116,14 +108,12 @@ function SortableSectionItem({
           <div
             {...attributes}
             {...listeners}
-            className="cursor-grab active:cursor-grabbing text-wsu-text-muted hover:text-wsu-crimson transition-colors flex-shrink-0 p-1 -ml-1"
+            className="cursor-grab active:cursor-grabbing text-wsu-text-muted hover:text-wsu-crimson transition-colors flex-shrink-0 inline-flex min-h-11 min-w-11 items-center justify-center"
             title="Drag to reorder section"
           >
             <GripVertical className="w-5 h-5" />
           </div>
-          <h4 className="font-semibold text-wsu-crimson">
-            {section.title || section.key}
-          </h4>
+          <h4 className="font-semibold text-wsu-crimson">{section.title || section.key}</h4>
         </div>
         <div className="flex flex-wrap items-center gap-1">
           <ReorderButtons
@@ -135,7 +125,7 @@ function SortableSectionItem({
           <button
             type="button"
             onClick={() => onRemoveSection(sectionIndex)}
-            className="inline-flex min-h-11 min-w-11 items-center justify-center text-red-600 hover:text-red-700"
+            className="ml-2 inline-flex min-h-11 min-w-11 items-center justify-center border-l border-wsu-border-light text-red-600 hover:text-red-700"
             aria-label={`Remove ${label}`}
             title="Remove section"
           >
@@ -169,14 +159,9 @@ function SortableCardItem({
   onAssist?: (sectionIndex: number, cardIndex: number) => void
 }) {
   const label = ('title' in card && card.title?.trim()) || `card ${cardIndex + 1}`
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: `card-${sectionIndex}-${cardIndex}` })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `card-${sectionIndex}-${cardIndex}`,
+  })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -188,7 +173,7 @@ function SortableCardItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`p-2 bg-white border border-wsu-border-light rounded-md flex items-center justify-between ${
+      className={`p-2 bg-white border border-wsu-border-light rounded-md flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between ${
         isDragging ? 'shadow-lg ring-2 ring-wsu-crimson' : ''
       }`}
     >
@@ -196,17 +181,15 @@ function SortableCardItem({
         <div
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing text-wsu-text-muted hover:text-wsu-crimson transition-colors flex-shrink-0 p-1 -ml-1"
+          className="cursor-grab active:cursor-grabbing text-wsu-text-muted hover:text-wsu-crimson transition-colors flex-shrink-0 inline-flex min-h-11 min-w-11 items-center justify-center"
           title="Drag to reorder"
         >
           <GripVertical className="w-5 h-5" />
         </div>
         <FileText className="w-5 h-5 text-wsu-text-muted flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-wsu-text-dark truncate">
-            {'title' in card && card.title
-              ? card.title
-              : `Card ${cardIndex + 1} (${card.type})`}
+          <div className="text-sm font-medium text-wsu-text-dark break-words">
+            {'title' in card && card.title ? card.title : `Card ${cardIndex + 1} (${card.type})`}
           </div>
           <div className="text-xs text-wsu-text-muted">{card.type}</div>
         </div>
@@ -224,11 +207,12 @@ function SortableCardItem({
             e.stopPropagation()
             onEdit(sectionIndex, cardIndex)
           }}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center text-wsu-crimson hover:text-wsu-crimson-dark"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-wsu-crimson hover:text-wsu-crimson-dark"
           aria-label={`Edit ${label}`}
           title="Edit card"
         >
-          <Edit2 className="w-4 h-4" />
+          <Edit2 className="mr-1 w-4 h-4" />
+          <span className="text-sm">Edit</span>
         </button>
         {onAssist && (
           <button
@@ -249,7 +233,7 @@ function SortableCardItem({
             e.stopPropagation()
             onRemove(sectionIndex, cardIndex)
           }}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center text-red-600 hover:text-red-700"
+          className="ml-2 inline-flex min-h-11 min-w-11 items-center justify-center border-l border-wsu-border-light text-red-600 hover:text-red-700"
           aria-label={`Remove ${label}`}
           title="Remove card"
         >
@@ -279,14 +263,9 @@ function SortableClosureItem({
   onRemove: (sectionIndex: number, closureIndex: number) => void
 }) {
   const label = closure.date?.trim() || closure.reason?.trim() || 'untitled closure'
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: `closure-${sectionIndex}-${closureIndex}` })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: `closure-${sectionIndex}-${closureIndex}`,
+  })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -298,7 +277,7 @@ function SortableClosureItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`p-2 bg-white border border-wsu-border-light rounded-md flex items-center justify-between ${
+      className={`p-2 bg-white border border-wsu-border-light rounded-md flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between ${
         isDragging ? 'shadow-lg ring-2 ring-wsu-crimson' : ''
       }`}
     >
@@ -306,19 +285,17 @@ function SortableClosureItem({
         <div
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing text-wsu-text-muted hover:text-wsu-crimson transition-colors flex-shrink-0 p-1 -ml-1"
+          className="cursor-grab active:cursor-grabbing text-wsu-text-muted hover:text-wsu-crimson transition-colors flex-shrink-0 inline-flex min-h-11 min-w-11 items-center justify-center"
           title="Drag to reorder"
         >
           <GripVertical className="w-5 h-5" />
         </div>
         <Calendar className="w-5 h-5 text-wsu-text-muted flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-wsu-text-dark truncate">
+          <div className="text-sm font-medium text-wsu-text-dark break-words">
             {closure.date || `Closure ${closureIndex + 1}`}
           </div>
-          <div className="text-xs text-wsu-text-muted truncate">
-            {closure.reason || 'No reason specified'}
-          </div>
+          <div className="text-xs text-wsu-text-muted truncate">{closure.reason || 'No reason specified'}</div>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-1">
@@ -334,11 +311,12 @@ function SortableClosureItem({
             e.stopPropagation()
             onEdit(sectionIndex, closureIndex)
           }}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center text-wsu-crimson hover:text-wsu-crimson-dark"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-wsu-crimson hover:text-wsu-crimson-dark"
           aria-label={`Edit ${label}`}
           title="Edit closure"
         >
-          <Edit2 className="w-4 h-4" />
+          <Edit2 className="mr-1 w-4 h-4" />
+          <span className="text-sm">Edit</span>
         </button>
         <button
           type="button"
@@ -346,7 +324,7 @@ function SortableClosureItem({
             e.stopPropagation()
             onRemove(sectionIndex, closureIndex)
           }}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center text-red-600 hover:text-red-700"
+          className="ml-2 inline-flex min-h-11 min-w-11 items-center justify-center border-l border-wsu-border-light text-red-600 hover:text-red-700"
           aria-label={`Remove ${label}`}
           title="Remove closure"
         >
@@ -357,11 +335,7 @@ function SortableClosureItem({
   )
 }
 
-export default function SectionsEditor({
-  state,
-  updateState,
-  onAssist,
-}: SectionsEditorProps) {
+export default function SectionsEditor({ state, updateState, onAssist }: SectionsEditorProps) {
   const sections = state.sections || []
   const [editingCard, setEditingCard] = useState<{
     sectionIndex: number
@@ -404,7 +378,7 @@ export default function SectionsEditor({
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   )
 
   const addSection = () => {
@@ -442,7 +416,7 @@ export default function SectionsEditor({
               },
             ],
           }),
-          true
+          true,
         )
         setPromptModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
       },
@@ -461,7 +435,7 @@ export default function SectionsEditor({
             ...prev,
             sections: prev.sections.filter((_, i) => i !== index),
           }),
-          true
+          true,
         )
         setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
       },
@@ -496,21 +470,14 @@ export default function SectionsEditor({
     const overSectionIndex = parseInt(overMatch[1], 10)
 
     // Use the state updater function to get the latest state
-    updateState(
-      (prev) => {
-        const newSections = arrayMove(
-          [...prev.sections],
-          activeSectionIndex,
-          overSectionIndex
-        )
+    updateState((prev) => {
+      const newSections = arrayMove([...prev.sections], activeSectionIndex, overSectionIndex)
 
-        return {
-          ...prev,
-          sections: newSections,
-        }
-      },
-      true
-    )
+      return {
+        ...prev,
+        sections: newSections,
+      }
+    }, true)
   }
 
   const moveSection = (index: number, direction: -1 | 1) => {
@@ -608,18 +575,15 @@ export default function SectionsEditor({
     const section = sections[sectionIndex]
     const cardIndex = section.cards?.length || 0
 
-    updateState(
-      (prev) => {
-        const newSections = [...prev.sections]
-        const section = newSections[sectionIndex]
-        if (!section.cards) {
-          section.cards = []
-        }
-        section.cards.push(newCard)
-        return { ...prev, sections: newSections }
-      },
-      true
-    )
+    updateState((prev) => {
+      const newSections = [...prev.sections]
+      const section = newSections[sectionIndex]
+      if (!section.cards) {
+        section.cards = []
+      }
+      section.cards.push(newCard)
+      return { ...prev, sections: newSections }
+    }, true)
 
     // Open editor for the new card
     setEditingCard({
@@ -640,17 +604,14 @@ export default function SectionsEditor({
   const saveCard = (card: Card) => {
     if (!editingCard) return
 
-    updateState(
-      (prev) => {
-        const newSections = [...prev.sections]
-        const section = newSections[editingCard.sectionIndex]
-        if (section.cards) {
-          section.cards[editingCard.cardIndex] = card
-        }
-        return { ...prev, sections: newSections }
-      },
-      true
-    )
+    updateState((prev) => {
+      const newSections = [...prev.sections]
+      const section = newSections[editingCard.sectionIndex]
+      if (section.cards) {
+        section.cards[editingCard.cardIndex] = card
+      }
+      return { ...prev, sections: newSections }
+    }, true)
 
     setEditingCard(null)
   }
@@ -658,17 +619,14 @@ export default function SectionsEditor({
   const deleteCard = () => {
     if (!editingCard) return
 
-    updateState(
-      (prev) => {
-        const newSections = [...prev.sections]
-        const section = newSections[editingCard.sectionIndex]
-        if (section.cards) {
-          section.cards.splice(editingCard.cardIndex, 1)
-        }
-        return { ...prev, sections: newSections }
-      },
-      true
-    )
+    updateState((prev) => {
+      const newSections = [...prev.sections]
+      const section = newSections[editingCard.sectionIndex]
+      if (section.cards) {
+        section.cards.splice(editingCard.cardIndex, 1)
+      }
+      return { ...prev, sections: newSections }
+    }, true)
 
     setEditingCard(null)
   }
@@ -680,17 +638,14 @@ export default function SectionsEditor({
       message: 'Are you sure you want to remove this card? This action cannot be undone.',
       variant: 'danger',
       onConfirm: () => {
-        updateState(
-          (prev) => {
-            const newSections = [...prev.sections]
-            const section = newSections[sectionIndex]
-            if (section.cards) {
-              section.cards.splice(cardIndex, 1)
-            }
-            return { ...prev, sections: newSections }
-          },
-          true
-        )
+        updateState((prev) => {
+          const newSections = [...prev.sections]
+          const section = newSections[sectionIndex]
+          if (section.cards) {
+            section.cards.splice(cardIndex, 1)
+          }
+          return { ...prev, sections: newSections }
+        }, true)
         setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
       },
     })
@@ -707,18 +662,15 @@ export default function SectionsEditor({
     const section = sections[sectionIndex]
     const closureIndex = section.closures?.length || 0
 
-    updateState(
-      (prev) => {
-        const newSections = [...prev.sections]
-        const section = newSections[sectionIndex]
-        if (!section.closures) {
-          section.closures = []
-        }
-        section.closures.push(newClosure)
-        return { ...prev, sections: newSections }
-      },
-      true
-    )
+    updateState((prev) => {
+      const newSections = [...prev.sections]
+      const section = newSections[sectionIndex]
+      if (!section.closures) {
+        section.closures = []
+      }
+      section.closures.push(newClosure)
+      return { ...prev, sections: newSections }
+    }, true)
 
     // Open editor for the new closure
     setEditingClosure({
@@ -739,17 +691,14 @@ export default function SectionsEditor({
   const saveClosure = (closure: Closure) => {
     if (!editingClosure) return
 
-    updateState(
-      (prev) => {
-        const newSections = [...prev.sections]
-        const section = newSections[editingClosure.sectionIndex]
-        if (section.closures) {
-          section.closures[editingClosure.closureIndex] = closure
-        }
-        return { ...prev, sections: newSections }
-      },
-      true
-    )
+    updateState((prev) => {
+      const newSections = [...prev.sections]
+      const section = newSections[editingClosure.sectionIndex]
+      if (section.closures) {
+        section.closures[editingClosure.closureIndex] = closure
+      }
+      return { ...prev, sections: newSections }
+    }, true)
 
     setEditingClosure(null)
   }
@@ -757,17 +706,14 @@ export default function SectionsEditor({
   const deleteClosure = () => {
     if (!editingClosure) return
 
-    updateState(
-      (prev) => {
-        const newSections = [...prev.sections]
-        const section = newSections[editingClosure.sectionIndex]
-        if (section.closures) {
-          section.closures.splice(editingClosure.closureIndex, 1)
-        }
-        return { ...prev, sections: newSections }
-      },
-      true
-    )
+    updateState((prev) => {
+      const newSections = [...prev.sections]
+      const section = newSections[editingClosure.sectionIndex]
+      if (section.closures) {
+        section.closures.splice(editingClosure.closureIndex, 1)
+      }
+      return { ...prev, sections: newSections }
+    }, true)
 
     setEditingClosure(null)
   }
@@ -779,17 +725,14 @@ export default function SectionsEditor({
       message: 'Are you sure you want to remove this closure? This action cannot be undone.',
       variant: 'danger',
       onConfirm: () => {
-        updateState(
-          (prev) => {
-            const newSections = [...prev.sections]
-            const section = newSections[sectionIndex]
-            if (section.closures) {
-              section.closures.splice(closureIndex, 1)
-            }
-            return { ...prev, sections: newSections }
-          },
-          true
-        )
+        updateState((prev) => {
+          const newSections = [...prev.sections]
+          const section = newSections[sectionIndex]
+          if (section.closures) {
+            section.closures.splice(closureIndex, 1)
+          }
+          return { ...prev, sections: newSections }
+        }, true)
         setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
       },
     })
@@ -825,45 +768,38 @@ export default function SectionsEditor({
     }
 
     // Use the state updater function to get the latest state
-    updateState(
-      (prev) => {
-        const newSections = [...prev.sections]
-        const section = newSections[sectionIndex]
-        
-        if (!section || !section.closures || section.closures.length === 0) {
-          return prev
-        }
+    updateState((prev) => {
+      const newSections = [...prev.sections]
+      const section = newSections[sectionIndex]
 
-        // Ensure indices are valid
-        if (
-          activeClosureIndex < 0 ||
-          activeClosureIndex >= section.closures.length ||
-          overClosureIndex < 0 ||
-          overClosureIndex >= section.closures.length
-        ) {
-          return prev
-        }
+      if (!section || !section.closures || section.closures.length === 0) {
+        return prev
+      }
 
-        // Create a new array with reordered closures
-        const newClosures = arrayMove(
-          [...section.closures],
-          activeClosureIndex,
-          overClosureIndex
-        )
+      // Ensure indices are valid
+      if (
+        activeClosureIndex < 0 ||
+        activeClosureIndex >= section.closures.length ||
+        overClosureIndex < 0 ||
+        overClosureIndex >= section.closures.length
+      ) {
+        return prev
+      }
 
-        // Update the section with the new closures array
-        newSections[sectionIndex] = {
-          ...section,
-          closures: newClosures,
-        }
+      // Create a new array with reordered closures
+      const newClosures = arrayMove([...section.closures], activeClosureIndex, overClosureIndex)
 
-        return {
-          ...prev,
-          sections: newSections,
-        }
-      },
-      true
-    )
+      // Update the section with the new closures array
+      newSections[sectionIndex] = {
+        ...section,
+        closures: newClosures,
+      }
+
+      return {
+        ...prev,
+        sections: newSections,
+      }
+    }, true)
   }
 
   // Handle card drag end
@@ -896,45 +832,38 @@ export default function SectionsEditor({
     }
 
     // Use the state updater function to get the latest state
-    updateState(
-      (prev) => {
-        const newSections = [...prev.sections]
-        const section = newSections[sectionIndex]
-        
-        if (!section || !section.cards || section.cards.length === 0) {
-          return prev
-        }
+    updateState((prev) => {
+      const newSections = [...prev.sections]
+      const section = newSections[sectionIndex]
 
-        // Ensure indices are valid
-        if (
-          activeCardIndex < 0 ||
-          activeCardIndex >= section.cards.length ||
-          overCardIndex < 0 ||
-          overCardIndex >= section.cards.length
-        ) {
-          return prev
-        }
+      if (!section || !section.cards || section.cards.length === 0) {
+        return prev
+      }
 
-        // Create a new array with reordered cards
-        const newCards = arrayMove(
-          [...section.cards],
-          activeCardIndex,
-          overCardIndex
-        )
+      // Ensure indices are valid
+      if (
+        activeCardIndex < 0 ||
+        activeCardIndex >= section.cards.length ||
+        overCardIndex < 0 ||
+        overCardIndex >= section.cards.length
+      ) {
+        return prev
+      }
 
-        // Update the section with the new cards array
-        newSections[sectionIndex] = {
-          ...section,
-          cards: newCards,
-        }
+      // Create a new array with reordered cards
+      const newCards = arrayMove([...section.cards], activeCardIndex, overCardIndex)
 
-        return {
-          ...prev,
-          sections: newSections,
-        }
-      },
-      true
-    )
+      // Update the section with the new cards array
+      newSections[sectionIndex] = {
+        ...section,
+        cards: newCards,
+      }
+
+      return {
+        ...prev,
+        sections: newSections,
+      }
+    }, true)
   }
 
   return (
@@ -945,25 +874,20 @@ export default function SectionsEditor({
         collisionDetection={closestCenter}
         onDragEnd={handleSectionDragEnd}
       >
-        <SortableContext
-          items={sections.map((_, index) => `section-${index}`)}
-          strategy={verticalListSortingStrategy}
-        >
+        <SortableContext items={sections.map((_, index) => `section-${index}`)} strategy={verticalListSortingStrategy}>
           <div className="space-y-4">
-                {sections.map((section, sectionIndex) => (
-                  <SortableSectionItem
-                    key={section.key || `section-${sectionIndex}`}
-                    section={section}
-                    sectionIndex={sectionIndex}
-                    sectionCount={sections.length}
-                    onMoveSection={moveSection}
-                    onRemoveSection={removeSection}
-                  >
+            {sections.map((section, sectionIndex) => (
+              <SortableSectionItem
+                key={section.key || `section-${sectionIndex}`}
+                section={section}
+                sectionIndex={sectionIndex}
+                sectionCount={sections.length}
+                onMoveSection={moveSection}
+                onRemoveSection={removeSection}
+              >
                 <div className="space-y-2">
                   <div>
-                    <label className="block text-xs font-medium text-wsu-text-dark mb-1">
-                      Section Title
-                    </label>
+                    <label className="block text-xs font-medium text-wsu-text-dark mb-1">Section Title</label>
                     <input
                       type="text"
                       value={section.title || ''}
@@ -991,9 +915,7 @@ export default function SectionsEditor({
                           onDragEnd={(event) => handleClosureDragEnd(event, sectionIndex)}
                         >
                           <SortableContext
-                            items={section.closures.map(
-                              (_, index) => `closure-${sectionIndex}-${index}`
-                            )}
+                            items={section.closures.map((_, index) => `closure-${sectionIndex}-${index}`)}
                             strategy={verticalListSortingStrategy}
                           >
                             <div className="space-y-2">
@@ -1026,12 +948,10 @@ export default function SectionsEditor({
                   {/* Add Closure Button - Only show for closures sections */}
                   {section.key === 'closures' && (
                     <div className="mt-3">
-                      <div className="text-xs font-medium text-wsu-text-dark mb-2">
-                        Add Closure
-                      </div>
+                      <div className="text-xs font-medium text-wsu-text-dark mb-2">Add Closure</div>
                       <button
                         onClick={() => addClosure(sectionIndex)}
-                        className="px-2 py-1 text-xs font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors flex items-center gap-1"
+                        className="inline-flex min-h-11 items-center justify-center px-3 py-2 text-sm font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors flex items-center gap-1"
                       >
                         <Plus className="w-3 h-3" />
                         Add Closure
@@ -1042,9 +962,7 @@ export default function SectionsEditor({
                   {/* Cards List - Draggable */}
                   {section.key !== 'closures' && section.cards && section.cards.length > 0 && (
                     <div className="mt-3">
-                      <div className="text-xs font-medium text-wsu-text-dark mb-2">
-                        Cards ({section.cards.length})
-                      </div>
+                      <div className="text-xs font-medium text-wsu-text-dark mb-2">Cards ({section.cards.length})</div>
                       <DndContext
                         id={`slate-cards-${sectionIndex}`}
                         sensors={sensors}
@@ -1052,9 +970,7 @@ export default function SectionsEditor({
                         onDragEnd={(event) => handleCardDragEnd(event, sectionIndex)}
                       >
                         <SortableContext
-                          items={section.cards.map(
-                            (_, index) => `card-${sectionIndex}-${index}`
-                          )}
+                          items={section.cards.map((_, index) => `card-${sectionIndex}-${index}`)}
                           strategy={verticalListSortingStrategy}
                         >
                           <div className="space-y-2">
@@ -1084,37 +1000,35 @@ export default function SectionsEditor({
                   {/* Add Card Button - Only show for non-closures sections */}
                   {section.key !== 'closures' && (
                     <div className="mt-3">
-                      <div className="text-xs font-medium text-wsu-text-dark mb-2">
-                        Add Card
-                      </div>
+                      <div className="text-xs font-medium text-wsu-text-dark mb-2">Add Card</div>
                       <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => addCard(sectionIndex, 'standard')}
-                          className="px-2 py-1 text-xs font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
+                          className="inline-flex min-h-11 items-center justify-center px-3 py-2 text-sm font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
                         >
                           Standard
                         </button>
                         <button
                           onClick={() => addCard(sectionIndex, 'event')}
-                          className="px-2 py-1 text-xs font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
+                          className="inline-flex min-h-11 items-center justify-center px-3 py-2 text-sm font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
                         >
                           Event
                         </button>
                         <button
                           onClick={() => addCard(sectionIndex, 'resource')}
-                          className="px-2 py-1 text-xs font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
+                          className="inline-flex min-h-11 items-center justify-center px-3 py-2 text-sm font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
                         >
                           Resource
                         </button>
                         <button
                           onClick={() => addCard(sectionIndex, 'cta')}
-                          className="px-2 py-1 text-xs font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
+                          className="inline-flex min-h-11 items-center justify-center px-3 py-2 text-sm font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
                         >
                           CTA
                         </button>
                         <button
                           onClick={() => addCard(sectionIndex, 'letter')}
-                          className="px-2 py-1 text-xs font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
+                          className="inline-flex min-h-11 items-center justify-center px-3 py-2 text-sm font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors"
                         >
                           Letter
                         </button>
@@ -1127,7 +1041,7 @@ export default function SectionsEditor({
 
             <button
               onClick={addSection}
-              className="w-full px-4 py-2 text-sm font-medium text-wsu-crimson border-2 border-dashed border-wsu-crimson rounded-lg hover:bg-wsu-crimson/10 transition-colors flex items-center justify-center gap-2"
+              className="w-full min-h-11 px-4 py-2 text-sm font-medium text-wsu-crimson border-2 border-dashed border-wsu-crimson rounded-lg hover:bg-wsu-crimson/10 transition-colors flex items-center justify-center gap-2"
             >
               <Plus className="w-4 h-4" />
               Add New Section
@@ -1163,9 +1077,7 @@ export default function SectionsEditor({
         message={confirmModal.message}
         variant={confirmModal.variant}
         onConfirm={confirmModal.onConfirm}
-        onCancel={() =>
-          setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
-        }
+        onCancel={() => setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })}
       />
 
       {/* Prompt Modal */}
@@ -1176,11 +1088,8 @@ export default function SectionsEditor({
         defaultValue={promptModal.defaultValue}
         placeholder={promptModal.placeholder}
         onConfirm={promptModal.onConfirm}
-        onCancel={() =>
-          setPromptModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
-        }
+        onCancel={() => setPromptModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })}
       />
     </>
   )
 }
-

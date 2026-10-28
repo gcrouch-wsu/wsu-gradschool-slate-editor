@@ -53,6 +53,7 @@ const child = spawn(process.execPath, [nextBin, 'dev', '--hostname', '127.0.0.1'
   env: {
     ...process.env,
     NODE_ENV: 'development',
+    SLATE_BROWSER_TEST: '1',
     DATABASE_URL: databaseUrl,
     AUTH_MODE: 'development',
     PUBLIC_ORIGIN: 'http://127.0.0.1:3100',

@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  devIndicators: process.env.SLATE_BROWSER_TEST === '1' ? false : undefined,
   serverExternalPackages: ['pg'],
   outputFileTracingIncludes: {
     '/api/newsletters/[id]/ai': ['./style.md'],

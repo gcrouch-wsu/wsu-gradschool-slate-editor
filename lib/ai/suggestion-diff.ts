@@ -21,14 +21,27 @@ export type InlineNode =
     }
 
 export type BlockNode =
-  | { type: 'block'; tag: string; mark: DiffMark; editId?: string; attrs?: Record<string, string>; children: InlineNode[] }
+  | {
+      type: 'block'
+      tag: string
+      mark: DiffMark
+      editId?: string
+      attrs?: Record<string, string>
+      children: InlineNode[]
+    }
   | {
       type: 'list'
       ordered: boolean
       mark: DiffMark
       editId?: string
       attrs?: Record<string, string>
-      items: { mark: DiffMark; editId?: string; attrs?: Record<string, string>; children: InlineNode[]; blocks: BlockNode[] }[]
+      items: {
+        mark: DiffMark
+        editId?: string
+        attrs?: Record<string, string>
+        children: InlineNode[]
+        blocks: BlockNode[]
+      }[]
     }
   | {
       type: 'table'
@@ -38,7 +51,13 @@ export type BlockNode =
       rows: {
         editId?: string
         attrs?: Record<string, string>
-        cells: { header: boolean; mark: DiffMark; editId?: string; attrs?: Record<string, string>; children: InlineNode[] }[]
+        cells: {
+          header: boolean
+          mark: DiffMark
+          editId?: string
+          attrs?: Record<string, string>
+          children: InlineNode[]
+        }[]
       }[]
     }
   | { type: 'rule'; mark: DiffMark; editId?: string }
@@ -76,7 +95,11 @@ type FlowSource = { type: 'flow'; tag: string; attrs: Record<string, string>; no
 type ItemSource = { attrs: Record<string, string>; nodes: HtmlNode[]; nested: Source[] }
 type ListSource = { type: 'list'; ordered: boolean; attrs: Record<string, string>; items: ItemSource[] }
 type CellSource = { header: boolean; attrs: Record<string, string>; nodes: HtmlNode[] }
-type TableSource = { type: 'table'; attrs: Record<string, string>; rows: { attrs: Record<string, string>; cells: CellSource[] }[] }
+type TableSource = {
+  type: 'table'
+  attrs: Record<string, string>
+  rows: { attrs: Record<string, string>; cells: CellSource[] }[]
+}
 type RuleSource = { type: 'rule' }
 type Source = FlowSource | ListSource | TableSource | RuleSource
 
@@ -261,17 +284,10 @@ function flatten(nodes: HtmlNode[], stack: Layer[] = [], atoms: Atom[] = []): At
   return atoms
 }
 
-type Aligned<T> =
-  | { kind: 'same'; left: T; right: T }
-  | { kind: 'removed'; left: T }
-  | { kind: 'added'; right: T }
+type Aligned<T> = { kind: 'same'; left: T; right: T } | { kind: 'removed'; left: T } | { kind: 'added'; right: T }
 
 function align<T>(left: T[], right: T[], key: (item: T) => string): Aligned<T>[] {
-  const parts = diffArrays(
-    left.map(key),
-    right.map(key),
-    { maxEditLength: 4000 },
-  )
+  const parts = diffArrays(left.map(key), right.map(key), { maxEditLength: 4000 })
   if (!parts) {
     return [
       ...left.map((item) => ({ kind: 'removed' as const, left: item })),
@@ -675,7 +691,9 @@ function diffSources(original: Source[], proposed: Source[], nextId: () => strin
       continue
     }
     const editId = nextId()
-    blocks.push(part.kind === 'removed' ? renderSource(part.left, 'removed', editId) : renderSource(part.right, 'added', editId))
+    blocks.push(
+      part.kind === 'removed' ? renderSource(part.left, 'removed', editId) : renderSource(part.right, 'added', editId),
+    )
   }
   return blocks
 }
@@ -702,14 +720,23 @@ export function compareSuggestions(original: string, proposed: string): Suggesti
   }
 }
 
-function decisionKeeps(mark: DiffMark, editId: string | undefined, decisions: Record<string, EditDecision>, showPending: boolean): boolean {
+function decisionKeeps(
+  mark: DiffMark,
+  editId: string | undefined,
+  decisions: Record<string, EditDecision>,
+  showPending: boolean,
+): boolean {
   if (mark === 'same') return true
   const decision = editId ? decisions[editId] : undefined
   if (!decision) return showPending || mark === 'added'
   return decision === 'pass' ? mark === 'removed' : mark === 'added'
 }
 
-function filterInline(nodes: InlineNode[], decisions: Record<string, EditDecision>, showPending: boolean): InlineNode[] {
+function filterInline(
+  nodes: InlineNode[],
+  decisions: Record<string, EditDecision>,
+  showPending: boolean,
+): InlineNode[] {
   const filtered: InlineNode[] = []
   for (const node of nodes) {
     if (node.type === 'link' || node.type === 'format') {
@@ -830,7 +857,8 @@ function blocksToHtml(blocks: BlockNode[], decisions: Record<string, EditDecisio
           return children ? `<li${markupAttrs(item.attrs, ['style'])}>${children}</li>` : ''
         })
         .join('')
-      if (items) html += `<${block.ordered ? 'ol' : 'ul'}${markupAttrs(block.attrs, ['style'])}>${items}</${block.ordered ? 'ol' : 'ul'}>`
+      if (items)
+        html += `<${block.ordered ? 'ol' : 'ul'}${markupAttrs(block.attrs, ['style'])}>${items}</${block.ordered ? 'ol' : 'ul'}>`
       continue
     }
     const rows = block.rows
@@ -902,7 +930,13 @@ function blocksToText(blocks: BlockNode[], decisions: Record<string, EditDecisio
   return parts.join('\n')
 }
 
-function recordEdit(edits: Map<string, { removed: string; added: string }>, order: string[], id: string | undefined, mark: DiffMark, text: string) {
+function recordEdit(
+  edits: Map<string, { removed: string; added: string }>,
+  order: string[],
+  id: string | undefined,
+  mark: DiffMark,
+  text: string,
+) {
   if (!id || mark === 'same') return
   if (!edits.has(id)) {
     edits.set(id, { removed: '', added: '' })
@@ -963,4 +997,16 @@ export function resolvedField(
   const blocks = compareSuggestions(original, proposed).changes
   if (plain) return blocksToText(blocks, decisions).trim()
   return sanitizeRichHtml(blocksToHtml(blocks, decisions))
+}
+
+/** Keep replacement blocks together so original/proposed passages share one review row. */
+export function comparisonPassages(blocks: BlockNode[]): BlockNode[][] {
+  const groups: BlockNode[][] = []
+  for (const block of blocks) {
+    const ids = new Set(listEdits([block]).map((edit) => edit.id))
+    const previous = groups[groups.length - 1]
+    if (previous && listEdits(previous).some((edit) => ids.has(edit.id))) previous.push(block)
+    else groups.push([block])
+  }
+  return groups
 }

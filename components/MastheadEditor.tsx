@@ -4,26 +4,59 @@ import type { NewsletterData } from '@/types/newsletter'
 
 interface MastheadEditorProps {
   state: NewsletterData
-  updateState: (
-    updater: (prev: NewsletterData) => NewsletterData,
-    pushHistory?: boolean
-  ) => void
+  updateState: (updater: (prev: NewsletterData) => NewsletterData, pushHistory?: boolean) => void
   onSuggestPreheader?: () => void
 }
 
-export default function MastheadEditor({
-  state,
-  updateState,
-  onSuggestPreheader,
-}: MastheadEditorProps) {
+export default function MastheadEditor({ state, updateState, onSuggestPreheader }: MastheadEditorProps) {
   const masthead = state.masthead || {}
 
   return (
     <div className="space-y-4">
       <div>
-        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-          Banner Image URL
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="issue-title">
+          Issue title
         </label>
+        <input
+          id="issue-title"
+          type="text"
+          value={state.issue?.title || ''}
+          onChange={(event) =>
+            updateState((prev) => ({
+              ...prev,
+              issue: { title: event.target.value, date: prev.issue?.date || '' },
+            }))
+          }
+          placeholder="October 31, 2026"
+          className="w-full min-h-11 px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+        />
+        <p className="mt-1 text-xs text-wsu-text-muted">
+          This names the issue in the library. It is separate from the email heading and is not guessed for older
+          drafts.
+        </p>
+      </div>
+
+      <div>
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="issue-date">
+          Issue date
+        </label>
+        <input
+          id="issue-date"
+          type="text"
+          value={state.issue?.date || ''}
+          onChange={(event) =>
+            updateState((prev) => ({
+              ...prev,
+              issue: { title: prev.issue?.title || '', date: event.target.value },
+            }))
+          }
+          placeholder="October 31, 2026"
+          className="w-full min-h-11 px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
+        />
+      </div>
+
+      <div>
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Banner Image URL</label>
         <input
           type="url"
           value={masthead.banner_url || ''}
@@ -39,9 +72,7 @@ export default function MastheadEditor({
       </div>
 
       <div>
-        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-          Banner Alt Text
-        </label>
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Banner Alt Text</label>
         <input
           type="text"
           value={masthead.banner_alt || ''}
@@ -69,16 +100,12 @@ export default function MastheadEditor({
             }
             className="rounded border-wsu-border-light text-wsu-crimson focus:ring-wsu-crimson"
           />
-          <span className="text-sm font-medium text-wsu-text-dark">
-            Show Banner Image
-          </span>
+          <span className="text-sm font-medium text-wsu-text-dark">Show Banner Image</span>
         </label>
       </div>
 
       <div>
-        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-          Banner Link URL (optional)
-        </label>
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Banner Link URL (optional)</label>
         <input
           type="url"
           value={masthead.hero_link || ''}
@@ -91,15 +118,11 @@ export default function MastheadEditor({
           placeholder="https://..."
           className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
         />
-        <p className="mt-1 text-xs text-wsu-text-muted">
-          Make banner clickable by adding a link.
-        </p>
+        <p className="mt-1 text-xs text-wsu-text-muted">Make banner clickable by adding a link.</p>
       </div>
 
       <div>
-        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-          Banner Alignment
-        </label>
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Banner Alignment</label>
         <select
           value={masthead.banner_align || 'center'}
           onChange={(e) =>
@@ -123,47 +146,6 @@ export default function MastheadEditor({
       </div>
 
       <div>
-        <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="issue-title">
-          Issue title
-        </label>
-        <input
-          id="issue-title"
-          type="text"
-          value={state.issue?.title || ''}
-          onChange={(event) =>
-            updateState((prev) => ({
-              ...prev,
-              issue: { title: event.target.value, date: prev.issue?.date || '' },
-            }))
-          }
-          placeholder="October 31, 2026"
-          className="w-full min-h-11 px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
-        />
-        <p className="mt-1 text-xs text-wsu-text-muted">
-          This names the issue in the library. It is separate from the email heading and is not guessed for older drafts.
-        </p>
-      </div>
-
-      <div>
-        <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="issue-date">
-          Issue date
-        </label>
-        <input
-          id="issue-date"
-          type="text"
-          value={state.issue?.date || ''}
-          onChange={(event) =>
-            updateState((prev) => ({
-              ...prev,
-              issue: { title: prev.issue?.title || '', date: event.target.value },
-            }))
-          }
-          placeholder="October 31, 2026"
-          className="w-full min-h-11 px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
-        />
-      </div>
-
-      <div>
         <label className="block mb-1 text-sm font-medium text-wsu-text-dark" htmlFor="newsletter-title">
           Newsletter Title
         </label>
@@ -183,9 +165,7 @@ export default function MastheadEditor({
       </div>
 
       <div>
-        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-          Tagline
-        </label>
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Tagline</label>
         <input
           type="text"
           value={masthead.tagline || ''}
@@ -201,9 +181,7 @@ export default function MastheadEditor({
       </div>
 
       <div>
-        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-          Preheader Text
-        </label>
+        <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Preheader Text</label>
         <input
           type="text"
           value={masthead.preheader || ''}
@@ -238,4 +216,3 @@ export default function MastheadEditor({
     </div>
   )
 }
-

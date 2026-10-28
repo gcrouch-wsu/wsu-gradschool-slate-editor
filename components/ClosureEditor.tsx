@@ -2,7 +2,8 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useId, useRef, useState } from 'react'
+import { useDialogFocus } from '@/lib/client/use-dialog-focus'
 import type { Closure } from '@/types/newsletter'
 import { Trash2 } from 'lucide-react'
 
@@ -13,13 +14,26 @@ interface ClosureEditorProps {
   onDelete?: () => void
 }
 
-export default function ClosureEditor({
-  closure,
-  onSave,
-  onCancel,
-  onDelete,
-}: ClosureEditorProps) {
+export default function ClosureEditor({ closure, onSave, onCancel, onDelete }: ClosureEditorProps) {
   const [editedClosure, setEditedClosure] = useState<Closure>(closure)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  const discardRef = useRef<HTMLButtonElement>(null)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const dirty = JSON.stringify(editedClosure) !== JSON.stringify(closure)
+  function requestClose() {
+    if (confirmDiscard) {
+      setConfirmDiscard(false)
+      return
+    }
+    if (!dirty) {
+      onCancel()
+      return
+    }
+    setConfirmDiscard(true)
+    requestAnimationFrame(() => discardRef.current?.focus())
+  }
+  useDialogFocus(dialogRef, requestClose)
 
   const handleSave = () => {
     onSave(editedClosure)
@@ -27,47 +41,75 @@ export default function ClosureEditor({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 z-10 bg-white border-b border-wsu-border-light p-4 flex items-center justify-between shadow-sm">
-          <h2 className="text-xl font-semibold text-wsu-text-dark">
-            Edit Closure
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="bg-white rounded-lg min-w-0 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+      >
+        <div className="sticky top-0 z-10 bg-white border-b border-wsu-border-light p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+          <h2 id={titleId} className="text-xl font-semibold text-wsu-text-dark">
+            Edit closure
           </h2>
           <div className="flex gap-2">
             {onDelete && (
               <button
                 onClick={onDelete}
-                className="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-600 rounded-md hover:bg-red-50 transition-colors flex items-center gap-1"
+                className="min-h-11 inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-red-600 border border-red-600 rounded-md hover:bg-red-50 transition-colors flex items-center gap-1"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
               </button>
             )}
             <button
-              onClick={onCancel}
-              className="px-3 py-1.5 text-sm font-medium text-wsu-text-muted border border-wsu-border-light rounded-md hover:bg-wsu-bg-light transition-colors"
+              onClick={requestClose}
+              className="min-h-11 inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-wsu-text-muted border border-wsu-border-light rounded-md hover:bg-wsu-bg-light transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-wsu-crimson border border-wsu-crimson-dark rounded-md hover:bg-wsu-crimson-dark transition-colors"
+              className="min-h-11 inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-white bg-wsu-crimson border border-wsu-crimson-dark rounded-md hover:bg-wsu-crimson-dark transition-colors"
             >
-              Save
+              Save closure
             </button>
           </div>
         </div>
 
+        <div className="px-4 pt-3 text-sm" role="status">
+          Changes here are not saved until you choose Save closure. The draft then saves automatically.
+        </div>
+        {confirmDiscard && (
+          <div role="alert" className="m-4 rounded-md border border-amber-300 bg-amber-50 p-3">
+            <p className="font-semibold">Discard unsaved closure changes?</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                ref={discardRef}
+                type="button"
+                className="min-h-11 rounded-md border border-wsu-crimson bg-white px-3 font-semibold text-wsu-crimson"
+                onClick={() => setConfirmDiscard(false)}
+              >
+                Keep editing
+              </button>
+              <button
+                type="button"
+                className="min-h-11 rounded-md border border-red-700 bg-white px-3 font-semibold text-red-800"
+                onClick={onCancel}
+              >
+                Discard closure changes
+              </button>
+            </div>
+          </div>
+        )}
         <div className="p-6 space-y-4">
           <div>
-            <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-              Date *
-            </label>
+            <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Date *</label>
             <input
               type="text"
               value={editedClosure.date || ''}
-              onChange={(e) =>
-                setEditedClosure({ ...editedClosure, date: e.target.value })
-              }
+              onChange={(e) => setEditedClosure({ ...editedClosure, date: e.target.value })}
               className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
               placeholder="e.g., January 15, 2025"
             />
@@ -77,14 +119,10 @@ export default function ClosureEditor({
           </div>
 
           <div>
-            <label className="block mb-1 text-sm font-medium text-wsu-text-dark">
-              Reason *
-            </label>
+            <label className="block mb-1 text-sm font-medium text-wsu-text-dark">Reason *</label>
             <textarea
               value={editedClosure.reason || ''}
-              onChange={(e) =>
-                setEditedClosure({ ...editedClosure, reason: e.target.value })
-              }
+              onChange={(e) => setEditedClosure({ ...editedClosure, reason: e.target.value })}
               rows={3}
               className="w-full px-3 py-2 border border-wsu-border-light rounded-md focus:outline-none focus:ring-2 focus:ring-wsu-crimson"
               placeholder="e.g., Martin Luther King Jr. Day"
@@ -98,4 +136,3 @@ export default function ClosureEditor({
     </div>
   )
 }
-
