@@ -4,6 +4,8 @@ Date: October 20, 2026
 
 Status: Implemented in the application on October 20, 2026. The current production host is Vercel with Postgres and local editor accounts. Okta and AWS remain later releases.
 
+This is the plan as written on October 20, 2026, kept for its decisions and Okta references. Some details have changed since: the app now requires Node 24.22.1, the single-user editor at `/` and its import and export routes were removed on October 30, 2026, and production runs on Vercel. See the [README](../../README.md) and [deployment guide](../deployment.md) for the current setup.
+
 ## Implementation status
 
 | Phase | Local result | Still required |
@@ -94,7 +96,7 @@ The viewer's logout path uses an HTTP-only ID-token cookie for `id_token_hint` a
 
 ### Knowledge Base: editing protection and history reference
 
-Local reference: `C:\Python Projects\wsu-gradschool-kb`, reviewed at commit `d8158b5803459548bfb452f560cd0b1fb6d8e06a`.
+Repository: [gcrouch-wsu/wsu-gradschool-kb](https://github.com/gcrouch-wsu/wsu-gradschool-kb), reviewed at commit `d8158b5803459548bfb452f560cd0b1fb6d8e06a`.
 
 Useful patterns include server-side permission guards, durable users, edit-lock heartbeats, transactional revision history, and per-author recovery drafts. The KB's local-password authentication is not the target authentication design for this editor.
 
@@ -230,7 +232,7 @@ Acceptance: deploy to an AWS test environment with separate data and secrets; ve
 - Initial PostgreSQL host, test/production databases, supported engine versions, backup policy, and eventual AWS service. Database or hosting migration does not have to coincide with Okta activation.
 - Which staff can administer access, how the first Administrator is provisioned, and whether all authorized editors share all newsletters.
 - Whether to accept the proposed full-revision-per-committed-autosave policy; revision retention, archive/restore policy, recovery-data retention, and the save-receipt retry/retention window. Decide before finalizing Phase 4 schema/write behavior.
-- AWS hosting, secret delivery, and CI/CD standards selected by WSU. This repository currently documents Railway-style hosting and already starts a portable Node process on `PORT`; no Vercel deployment or tooling is assumed. AWS packaging follows WSU's selected host.
+- AWS hosting, secret delivery, and CI/CD standards selected by WSU. The application starts a portable Node process on `PORT`, so AWS packaging can follow WSU's selected host.
 
 These are implementation inputs. The application can establish the module boundaries and document model without assuming unverified tenant settings or provisioning services during this planning task.
 
@@ -238,16 +240,16 @@ These are implementation inputs. The application can establish the module bounda
 
 ### Current editor source
 
-- [Editable newsletter model](types/newsletter.ts)
-- [Editor loading, template, import, and export flows](app/page.tsx)
-- [Current browser autosave and undo/redo](app/hooks/useNewsletterState.ts)
-- [Preview iframe](components/PreviewPanel.tsx)
-- [Tiptap rich-text and raw code view](components/TiptapEditor.tsx)
-- [HTML renderer](lib/email-templates.ts)
-- [Renderer-owned Slate link constants](lib/config.ts)
-- [Import handler](app/api/import/route.ts) and [export handler](app/api/export/route.ts)
-- [Package scripts and dependencies](package.json)
-- [Current hosting/start instructions](README.md) and [React Strict Mode configuration](next.config.js)
+- [Editable newsletter model](../../types/newsletter.ts)
+- Editor loading, template, import, and export flows: `app/page.tsx` at the time (the single-user editor, removed October 30, 2026)
+- [Current browser autosave and undo/redo](../../app/hooks/useNewsletterState.ts)
+- [Preview iframe](../../components/PreviewPanel.tsx)
+- [Tiptap rich-text and raw code view](../../components/TiptapEditor.tsx)
+- [HTML renderer](../../lib/email-templates.ts)
+- [Renderer-owned Slate link constants](../../lib/config.ts)
+- Import and export handlers: `app/api/import/route.ts` and `app/api/export/route.ts` at the time (removed October 30, 2026; shared drafts use `app/api/newsletters/import/route.ts` and `app/api/newsletters/[id]/export/route.ts`)
+- [Package scripts and dependencies](../../package.json)
+- [Current hosting/start instructions](../../README.md) and [React Strict Mode configuration](../../next.config.js)
 
 ### Smartsheet Viewer source reviewed at the Okta commit
 
@@ -264,15 +266,15 @@ These are implementation inputs. The application can establish the module bounda
 
 ### Knowledge Base source
 
-Paths below are relative to this repository's local parent directory. They refer to the sibling checkout at the commit recorded above.
+Links point to the Knowledge Base repository at the commit recorded above.
 
-- [Authentication and account validation](../wsu-gradschool-kb/src/lib/auth.ts)
-- [Server mutation and scope guards](../wsu-gradschool-kb/src/lib/security.ts)
-- [PostgreSQL writes, revisions, and locks](../wsu-gradschool-kb/src/lib/db.ts)
-- [Lease route](../wsu-gradschool-kb/src/app/api/admin/pages/[pageId]/lock/route.ts)
-- [Per-author recovery drafts](../wsu-gradschool-kb/src/lib/page-server-drafts.ts)
-- [Editor lock heartbeat and recovery UI](../wsu-gradschool-kb/src/components/AdminPageEditorForm.tsx)
-- [Versioned migrations](../wsu-gradschool-kb/src/lib/migrations/index.ts)
+- [Authentication and account validation](https://github.com/gcrouch-wsu/wsu-gradschool-kb/blob/d8158b5803459548bfb452f560cd0b1fb6d8e06a/src/lib/auth.ts)
+- [Server mutation and scope guards](https://github.com/gcrouch-wsu/wsu-gradschool-kb/blob/d8158b5803459548bfb452f560cd0b1fb6d8e06a/src/lib/security.ts)
+- [PostgreSQL writes, revisions, and locks](https://github.com/gcrouch-wsu/wsu-gradschool-kb/blob/d8158b5803459548bfb452f560cd0b1fb6d8e06a/src/lib/db.ts)
+- [Lease route](https://github.com/gcrouch-wsu/wsu-gradschool-kb/blob/d8158b5803459548bfb452f560cd0b1fb6d8e06a/src/app/api/admin/pages/[pageId]/lock/route.ts)
+- [Per-author recovery drafts](https://github.com/gcrouch-wsu/wsu-gradschool-kb/blob/d8158b5803459548bfb452f560cd0b1fb6d8e06a/src/lib/page-server-drafts.ts)
+- [Editor lock heartbeat and recovery UI](https://github.com/gcrouch-wsu/wsu-gradschool-kb/blob/d8158b5803459548bfb452f560cd0b1fb6d8e06a/src/components/AdminPageEditorForm.tsx)
+- [Versioned migrations](https://github.com/gcrouch-wsu/wsu-gradschool-kb/blob/d8158b5803459548bfb452f560cd0b1fb6d8e06a/src/lib/migrations/index.ts)
 
 ### Official guidance
 

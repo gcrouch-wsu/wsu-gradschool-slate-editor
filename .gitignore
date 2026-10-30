@@ -6,5 +6,4 @@ node_modules/
 next_build.md
 playwright-report/
 test-results/
-data/
 tests/browser/.runtime.json

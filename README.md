@@ -1,6 +1,6 @@
 # WSU Gradschool Slate Editor
 
-HTML newsletter editor for **Friday Focus**, **Graduate School Briefing**, and **Slate Campaign** templates. This is a **Next.js** app, split out from the former WSU Graduate School tools monorepo as its own repository.
+HTML newsletter editor for **Friday Focus**, **Graduate School Briefing**, and **Slate Campaign** templates. This is a **Next.js** app.
 
 **Repository:** [github.com/gcrouch-wsu/wsu-gradschool-slate-editor](https://github.com/gcrouch-wsu/wsu-gradschool-slate-editor)
 
@@ -14,7 +14,7 @@ HTML newsletter editor for **Friday Focus**, **Graduate School Briefing**, and *
 
 ## Requirements
 
-- **Node.js** 20.9 or newer (the app declares `engines.node`)
+- **Node.js** 24.22.1 or a later 24.x release (see `engines.node` and `.nvmrc`)
 - **npm**
 - PostgreSQL. Every mode needs a database; there is no longer an editor that runs without one.
 
@@ -95,10 +95,6 @@ wsu-gradschool-slate-editor/
 The current host is Vercel. Create a Postgres database, set `AUTH_MODE=local`, `DATABASE_URL`, `SESSION_SECRET`, and `PUBLIC_ORIGIN`, then run migrations and create accounts. The steps are in [docs/deployment.md](docs/deployment.md). Do not commit `.env`.
 
 Okta sign-in and an AWS move are later work.
-
-## Related WSU Graduate School tools
-
-This repo is maintained independently from the other Graduate School tools.
 
 ## Environment variables
 
