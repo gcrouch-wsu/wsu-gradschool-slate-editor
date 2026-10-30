@@ -1,7 +1,22 @@
 import { expect, test } from '@playwright/test'
 
 test('preview is isolated and the three templates render', async ({ page }) => {
+  // The dev server reloads this page while it first compiles. Start only after two quiet seconds without a reload.
+  let navigations = 0
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) navigations++
+  })
   await page.goto('/')
+  await expect
+    .poll(
+      async () => {
+        const seen = navigations
+        await page.waitForTimeout(2000)
+        return navigations === seen
+      },
+      { timeout: 60000 },
+    )
+    .toBe(true)
   await expect(page.locator('select').filter({ hasText: 'Friday Focus (Students)' })).toBeVisible()
   const masthead = page.getByRole('button', { name: 'Masthead' })
   await expect(async () => {
