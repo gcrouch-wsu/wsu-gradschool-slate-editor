@@ -11,10 +11,7 @@ export async function GET() {
     return NextResponse.json({ ok: false, problems }, { status: 503 })
   }
   if (!process.env.DATABASE_URL?.trim()) {
-    if (authMode() === 'okta') {
-      return NextResponse.json({ ok: false, problems: ['DATABASE_URL is required.'] }, { status: 503 })
-    }
-    return NextResponse.json({ ok: true, database: 'not-configured', authMode: authMode() })
+    return NextResponse.json({ ok: false, problems: ['DATABASE_URL is required.'] }, { status: 503 })
   }
   try {
     await getPool().query('SELECT 1')

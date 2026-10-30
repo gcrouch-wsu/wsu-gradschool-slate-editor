@@ -9,14 +9,14 @@ HTML newsletter editor for **Friday Focus**, **Graduate School Briefing**, and *
 - Shared drafts at `/newsletters`. One person edits a newsletter at a time. Finished HTML is copied into Slate; the editor does not send email.
 - Library filters for template and title, an editable issue title, and progress of Draft, Ready for Slate, or Sent via Slate.
 - Duplicate for next issue, revision history, and optional AI suggestions governed by `style.md`.
-- Rich editing (Tiptap) with preview, import/export HTML, validation, and plain-text generation.
-- Template switching with defaults loaded from API routes (`/api/defaults/...`).
+- Rich editing (Tiptap) with preview, import/export HTML, and accessibility checks.
+- `/` opens the newsletter library; signed-out visitors go to sign-in.
 
 ## Requirements
 
 - **Node.js** 20.9 or newer (the app declares `engines.node`)
 - **npm**
-- PostgreSQL only when trying shared newsletters locally. The editor at `/` runs without a database, including on Vercel.
+- PostgreSQL. Every mode needs a database; there is no longer an editor that runs without one.
 
 ## Quick start
 
@@ -87,6 +87,8 @@ wsu-gradschool-slate-editor/
 `AUTH_MODE=development` is for local tests and is refused in production. It is not the staff login.
 
 `AUTH_MODE=okta` is a future release. It does not replace local accounts until you select it.
+
+`AUTH_MODE` is required. If it is missing or not one of these values, `/api/health` reports the problem and nobody can sign in. (The former single-user editor that ran without sign-in was removed on October 30, 2026.)
 
 ## Deployment
 

@@ -138,13 +138,13 @@ test('production refuses development mode', () => {
 })
 
 test('local sign-in is unavailable unless local mode is selected', async () => {
-  setEnv({ AUTH_MODE: 'public', NODE_ENV: 'production' })
+  setEnv({ AUTH_MODE: undefined, NODE_ENV: 'production' })
   const { POST } = await import('@/app/api/auth/local/session/route')
   const response = await POST(new Request('http://localhost/api/auth/local/session', { method: 'POST' }))
   expect(response.status).toBe(404)
 })
 
-test('Vercel production stays on the public editor until a mode is selected', () => {
+test('a missing auth mode is reported instead of opening an unsigned editor', () => {
   setEnv({
     NODE_ENV: 'production',
     AUTH_MODE: undefined,
@@ -152,6 +152,6 @@ test('Vercel production stays on the public editor until a mode is selected', ()
     OKTA_ISSUER: undefined,
     PUBLIC_ORIGIN: undefined,
   })
-  expect(authMode()).toBe('public')
-  expect(configurationProblems()).toEqual([])
+  expect(authMode()).toBe('unset')
+  expect(configurationProblems()).toEqual(['AUTH_MODE must be local, okta, or development.'])
 })

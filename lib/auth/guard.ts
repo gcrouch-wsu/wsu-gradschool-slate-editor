@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { principalFromToken, SESSION_COOKIE, type Principal } from '@/lib/auth/session-store'
-import { authMode, publicOrigin } from '@/lib/runtime-config'
+import { publicOrigin } from '@/lib/runtime-config'
 import { canEdit } from '@/lib/newsletters/service'
 
 export function readCookie(request: Request, name: string): string | null {
@@ -69,14 +69,7 @@ export function isPrincipal(value: Principal | NextResponse): value is Principal
   return !(value instanceof NextResponse)
 }
 
-export function localContentAllowed(): boolean {
-  const mode = authMode()
-  if (mode === 'public') return true
-  return mode === 'development' && process.env.NODE_ENV !== 'production'
-}
-
 export async function allowContentRoute(request: Request): Promise<NextResponse | null> {
-  if (localContentAllowed()) return rejectCrossOrigin(request)
   const principal = await requireEditor(request)
   return isPrincipal(principal) ? null : principal
 }

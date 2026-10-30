@@ -304,42 +304,9 @@ export interface ValidationResult {
   error?: string
 }
 
-export interface Stats {
-  word_count: number
-  read_time_minutes: number
-  image_count: number
-  link_count: number
-  card_count: number
-  section_count: number
-  social_links: number
-}
-
-export interface StatsResult {
-  success: boolean
-  stats?: Stats
-  error?: string
-}
-
 export interface PreviewResponse {
   html: string
   success: boolean
-  error?: string
-}
-
-export interface PlainTextResponse {
-  text: string
-  success: boolean
-  error?: string
-}
-
-export interface ImportResponse {
-  success: boolean
-  data?: NewsletterData
-  error?: string
-}
-
-export interface DefaultsResponse {
-  success?: boolean
   error?: string
 }
 

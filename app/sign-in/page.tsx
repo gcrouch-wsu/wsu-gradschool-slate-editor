@@ -1,5 +1,4 @@
 import { authMode } from '@/lib/runtime-config'
-import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,15 +67,10 @@ export default async function SignInPage({
           </button>
         </form>
       ) : (
-        <div className="space-y-3">
-          <p>
-            Shared editing sign-in is not enabled yet. Okta is a later release. This deployment is the newsletter
-            editor.
-          </p>
-          <Link className="inline-block bg-wsu-crimson text-white px-4 py-2 rounded" href="/">
-            Open the editor
-          </Link>
-        </div>
+        <p role="alert">
+          Sign-in is not set up on this site yet. An administrator needs to set AUTH_MODE before anyone can edit
+          newsletters.
+        </p>
       )}
     </main>
   )

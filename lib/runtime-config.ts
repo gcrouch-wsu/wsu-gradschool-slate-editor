@@ -1,4 +1,5 @@
-export type AuthMode = 'public' | 'local' | 'okta' | 'development'
+// 'unset' means AUTH_MODE is missing or not recognized; the app reports it and nobody can sign in.
+export type AuthMode = 'local' | 'okta' | 'development' | 'unset'
 
 const REQUIRED_OKTA = [
   'OKTA_ISSUER',
@@ -14,12 +15,13 @@ export function authMode(): AuthMode {
   if (configured === 'okta') return 'okta'
   if (configured === 'local') return 'local'
   if (configured === 'development') return 'development'
-  return 'public'
+  return 'unset'
 }
 
 export function configurationProblems(): string[] {
   const problems: string[] = []
   const mode = authMode()
+  if (mode === 'unset') problems.push('AUTH_MODE must be local, okta, or development.')
   if (mode === 'development' && process.env.NODE_ENV === 'production') {
     problems.push('AUTH_MODE=development is not available in production.')
   }

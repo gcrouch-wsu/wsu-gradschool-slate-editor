@@ -113,7 +113,7 @@ Lease/version guards, proposal cancellation and stale checks, contributed-voice 
 - Shared drafts list Masthead first and open, then Sections, Footer (closed), and Global Settings last. The sticky bar holds status, Undo, Redo, and the editing-authority action; Check accessibility, Version history, and Export HTML sit in a Review and export row with the suggested order.
 - The library asks for an issue title and date when creating a draft (`POST /api/newsletters` accepts optional `issueTitle` and `issueDate`). Duplicate for next issue has separate title and date fields. Both use the shared dialog focus handling.
 - Label changes: library Delete is now Archive (Archive draft, Undo archive, This draft is archived.). Delete permanently is unchanged. Card wording is now story wording (Add a story, Stories (n), Call to action). Section and closure field labels are associated with their inputs.
-- The single-user editor at `/` (public and development modes) no longer claims the newsletter passes all accessibility checks.
+- The single-user editor at `/` was removed on October 30, 2026, along with public mode and its routes (`/api/export`, `/api/import`, `/api/generate-plaintext`, `/api/defaults/[type]`, `/api/stats`). `/` now redirects to `/newsletters`, `/api/preview` and `/api/validate` require a signed-in editor in every mode, and a missing `AUTH_MODE` is reported by `/api/health` instead of opening an editor without sign-in.
 
 ## Verification
 
