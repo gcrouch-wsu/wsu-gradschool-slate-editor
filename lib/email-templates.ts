@@ -9,7 +9,6 @@ import {
   STYLE_BODY_TEXT,
   STYLE_META,
   STYLE_LOCATION_LABEL,
-  STYLE_CARD_BODY,
   STYLE_RESET,
   STYLE_SOCIAL_ICON_CELL,
   EMAIL_CSS,
@@ -40,7 +39,6 @@ import type {
   ResourceCard,
   CTACard,
   LetterCard,
-  Closure,
 } from '@/types/newsletter'
 
 /**
@@ -822,40 +820,6 @@ function renderLetterCard(card: LetterCard, section: Section | null = null, sett
 }
 
 /**
- * Special closures list format
- */
-function renderClosuresSection(closures: Closure[]): string {
-  if (!closures || closures.length === 0) {
-    return ''
-  }
-
-  const items: string[] = []
-  for (const closure of closures) {
-    const date = (closure.date || '').trim()
-    const reason = (closure.reason || '').trim()
-    if (date || reason) {
-      items.push(`<li>${esc(date)} – ${esc(reason)}</li>`)
-    }
-  }
-
-  if (items.length === 0) {
-    return ''
-  }
-
-  const ulContent = items.join('\n')
-
-  return `<table cellpadding="0" cellspacing="0" role="presentation" width="100%" style="${STYLE_TABLE} background-color:${BG_CARD}; margin-bottom:20px;">
-  <tr>
-    <td style="${STYLE_CARD_BODY}">
-      <ul style="margin:10px 0 0 0; padding:0 0 0 20px; color:${TEXT_BODY}; font-size:16px; line-height:1.6;">
-        ${ulContent}
-      </ul>
-    </td>
-  </tr>
-</table>`
-}
-
-/**
  * Call-to-action box with fully customizable button AND padding
  */
 function renderCTABox(
@@ -1133,7 +1097,6 @@ function renderSection(
   markCard: (cardIndex: number, html: string) => string = (_, html) => html,
 ): string {
   const title = section.title || ''
-  const key = section.key || ''
   const layout = section.layout || {
     padding_top: 18,
     padding_bottom: 28,
@@ -1149,18 +1112,6 @@ function renderSection(
   // Override global spacing with section-specific if present
   if (!layout.divider_spacing) {
     layout.divider_spacing = spacing
-  }
-
-  // Special handling for closures
-  if (key === 'closures') {
-    const closures = section.closures || []
-    return (
-      renderSectionStart(title, layout, showBorder, isLast) +
-      '\n' +
-      renderClosuresSection(closures) +
-      '\n' +
-      renderSectionEnd()
-    )
   }
 
   // Regular sections with cards

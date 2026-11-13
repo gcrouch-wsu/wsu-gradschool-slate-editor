@@ -133,6 +133,10 @@ Earlier browser runs exposed nested Escape handling and lost focus when Reset ch
 
 Run database tests separately from browser tests because migration tests temporarily rewrite SQL fixtures. Run builds only after the browser dev server exits. Playwright results and screenshots remain outside the repository. AI responses were mocked; no paid/live request, credential change, commit, push, or production deployment was performed in this UX pass.
 
+## Tuesday Briefing office closures
+
+Graduate School Closures in a Tuesday Briefing is a normal stories section, the same controls Friday Focus uses: Stories, Edit, AI assistance, and Add a story (Standard, Event, Resource, Call to action, Letter). A new briefing starts with one untitled standard story whose body is a bullet list, with the date in bold. An older saved list of dates and reasons becomes that one story when the issue is opened, previewed, or exported. The saved date/reason editor is no longer shown. Friday Focus and Slate Campaign are unchanged. A sent briefing and its recorded snapshot are normalized the same way, so opening an unchanged sent issue does not by itself show Changed since sent. Typecheck and lint passed (the same two existing admin navigation warnings). Unit tests passed, 75 tests. The reorder browser tests passed, including creating a briefing, editing Graduate School Closures as stories, moving a new story, and Undo. The production build passed.
+
 ## Manual checks for the next real-use test
 
 Automated tests cover these only in development sign-in mode with a local database. Check them by hand on a real issue:

@@ -459,6 +459,30 @@ function normalizeCard(value: unknown): Card | null {
   return withOrigin({ type: 'standard', ...titled }, origin)
 }
 
+function escapeClosureText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** Older Tuesday Briefing issues stored office closures as date/reason pairs. They now edit as one story. */
+function storyFromClosures(closures: Closure[]): Card | null {
+  const items = closures.flatMap((closure) => {
+    const date = closure.date.trim()
+    const reason = closure.reason.trim()
+    if (!date && !reason) return []
+    const lead = date ? `<strong>${escapeClosureText(date)}</strong>` : ''
+    const detail = reason ? escapeClosureText(reason) : ''
+    const text = lead && detail ? `${lead} – ${detail}` : lead || detail
+    return [`<li>${text}</li>`]
+  })
+  if (items.length === 0) return null
+  return normalizeCard({
+    type: 'standard',
+    title: '',
+    body_html: `<ul>${items.join('')}</ul>`,
+    links: [],
+  })
+}
+
 function normalizeSections(value: unknown): Section[] {
   if (!Array.isArray(value)) return []
   return value.slice(0, MAX_SECTIONS).map((section, index) => {
@@ -475,12 +499,13 @@ function normalizeSections(value: unknown): Section[] {
           .map((card) => normalizeCard(card))
           .filter((card): card is Card => card !== null)
       : []
+    const closureStory = storyFromClosures(closures)
+    if (closureStory) cards.push(closureStory)
     return {
       key: text(record.key, 80) || `section-${index + 1}`,
       title: text(record.title, 300),
       layout: normalizeLayout(record.layout),
-      cards,
-      closures: closures.length > 0 ? closures : undefined,
+      cards: cards.slice(0, MAX_CARDS),
     }
   })
 }

@@ -322,8 +322,14 @@ export function defaultBriefingModel(): NewsletterData {
         key: 'closures',
         title: 'Graduate School Closures',
         layout: createDefaultSectionLayout(),
-        closures: [
-          { date: "Jan 1", reason: "Office closed for New Year's Day" },
+        cards: [
+          {
+            type: 'standard',
+            title: '',
+            body_html:
+              "<ul><li><strong>Jan 1</strong> – Office closed for New Year's Day</li></ul>",
+            links: [],
+          },
         ],
       },
       {

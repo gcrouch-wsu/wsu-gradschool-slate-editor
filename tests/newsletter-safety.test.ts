@@ -46,6 +46,39 @@ describe('newsletter document safety', () => {
     }
   })
 
+  it('turns saved Tuesday Briefing closures into one story', () => {
+    const legacy = {
+      ...defaultBriefingModel(),
+      sections: defaultBriefingModel().sections.map((section) =>
+        section.key === 'closures'
+          ? {
+              key: 'closures',
+              title: 'Graduate School Closures',
+              closures: [
+                { date: 'Thursday, November 26, 2026', reason: 'The office will be closed all day for Thanksgiving Day.' },
+                { date: '<script>alert(1)</script>', reason: 'A & B < C' },
+                { date: '   ', reason: '' },
+              ],
+            }
+          : section,
+      ),
+    }
+    const current = normalizeNewsletter(legacy, { requireShape: true })
+    const recorded = normalizeNewsletter(legacy, { requireShape: true })
+    const section = current.sections.find((item) => item.key === 'closures')
+    expect(section?.closures).toBeUndefined()
+    expect(section?.cards).toHaveLength(1)
+    expect(section?.cards?.[0]).toMatchObject({ type: 'standard', title: '' })
+    expect(section?.cards?.[0]?.body_html).toContain('<strong>Thursday, November 26, 2026</strong> – The office will be closed all day for Thanksgiving Day.')
+    expect(section?.cards?.[0]?.body_html).toContain('A &amp; B &lt; C')
+    expect(section?.cards?.[0]?.body_html).not.toContain('<script')
+    expect(documentFingerprint(current)).toBe(documentFingerprint(recorded))
+    const html = renderFullEmail(current)
+    expect(html).toContain('<strong>Thursday, November 26, 2026</strong>')
+    expect(html).toContain('Thanksgiving Day')
+    expect(html).not.toContain('Add Closure')
+  })
+
   it('normalizes legacy social objects and missing title alignment from either wrapper', () => {
     const legacy = {
       ...defaultFFModel(),

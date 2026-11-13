@@ -3,10 +3,9 @@
 'use client'
 
 import { useState } from 'react'
-import type { NewsletterData, Section, Card, Closure } from '@/types/newsletter'
-import { Plus, Trash2, Edit2, FileText, GripVertical, Calendar } from 'lucide-react'
+import type { NewsletterData, Section, Card } from '@/types/newsletter'
+import { Plus, Trash2, Edit2, FileText, GripVertical } from 'lucide-react'
 import CardEditor from './CardEditor'
-import ClosureEditor from './ClosureEditor'
 import ConfirmModal from './ConfirmModal'
 import PromptModal from './PromptModal'
 import {
@@ -255,97 +254,6 @@ function SortableCardItem({
   )
 }
 
-// Sortable closure item component
-function SortableClosureItem({
-  closure,
-  closureIndex,
-  closureCount,
-  sectionIndex,
-  onMove,
-  onEdit,
-  onRemove,
-}: {
-  closure: Closure
-  closureIndex: number
-  closureCount: number
-  sectionIndex: number
-  onMove: (sectionIndex: number, closureIndex: number, direction: -1 | 1) => void
-  onEdit: (sectionIndex: number, closureIndex: number) => void
-  onRemove: (sectionIndex: number, closureIndex: number) => void
-}) {
-  const label = closure.date?.trim() || closure.reason?.trim() || 'untitled closure'
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: `closure-${sectionIndex}-${closureIndex}`,
-  })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`p-2 bg-white border border-wsu-border-light rounded-md flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between ${
-        isDragging ? 'shadow-lg ring-2 ring-wsu-crimson' : ''
-      }`}
-    >
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        <div
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-wsu-text-muted hover:text-wsu-crimson transition-colors flex-shrink-0 inline-flex min-h-11 min-w-11 items-center justify-center"
-          title="Drag to reorder"
-        >
-          <GripVertical className="w-5 h-5" />
-        </div>
-        <Calendar className="w-5 h-5 text-wsu-text-muted flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-wsu-text-dark break-words">
-            {closure.date || `Closure ${closureIndex + 1}`}
-          </div>
-          <div className="text-xs text-wsu-text-muted truncate">{closure.reason || 'No reason specified'}</div>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-1">
-        <ReorderButtons
-          label={label}
-          index={closureIndex}
-          count={closureCount}
-          onMove={(direction) => onMove(sectionIndex, closureIndex, direction)}
-        />
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onEdit(sectionIndex, closureIndex)
-          }}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-wsu-crimson hover:text-wsu-crimson-dark"
-          aria-label={`Edit ${label}`}
-          title="Edit closure"
-        >
-          <Edit2 className="mr-1 w-4 h-4" />
-          <span className="text-sm">Edit</span>
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onRemove(sectionIndex, closureIndex)
-          }}
-          className="ml-2 inline-flex min-h-11 min-w-11 items-center justify-center border-l border-wsu-border-light text-red-600 hover:text-red-700"
-          aria-label={`Remove ${label}`}
-          title="Remove closure"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  )
-}
-
 export default function SectionsEditor({ state, updateState, onAssist, storyRequest = null }: SectionsEditorProps) {
   const sections = state.sections || []
   const [handledRequest, setHandledRequest] = useState(storyRequest)
@@ -353,12 +261,6 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
     sectionIndex: number
     cardIndex: number
     card: Card
-    isNew: boolean
-  } | null>(null)
-  const [editingClosure, setEditingClosure] = useState<{
-    sectionIndex: number
-    closureIndex: number
-    closure: Closure
     isNew: boolean
   } | null>(null)
   const [confirmModal, setConfirmModal] = useState<{
@@ -378,7 +280,6 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
     setHandledRequest(storyRequest)
     const requested = storyRequest && sections[storyRequest.sectionIndex]?.cards?.[storyRequest.cardIndex]
     if (storyRequest && requested) {
-      setEditingClosure(null)
       setEditingCard({
         sectionIndex: storyRequest.sectionIndex,
         cardIndex: storyRequest.cardIndex,
@@ -419,7 +320,6 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
         if (!title) return
 
         const key = title.toLowerCase().replace(/\s+/g, '_')
-        const isClosuresSection = key === 'closures'
 
         updateState(
           (prev) => ({
@@ -440,7 +340,7 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
                   divider_spacing: 24,
                   title_align: 'left',
                 },
-                ...(isClosuresSection ? { closures: [] } : { cards: [] }),
+                cards: [],
               },
             ],
           }),
@@ -528,18 +428,6 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
     }, true)
   }
 
-  const moveClosure = (sectionIndex: number, closureIndex: number, direction: -1 | 1) => {
-    updateState((prev) => {
-      const section = prev.sections[sectionIndex]
-      const closures = section?.closures
-      const next = closureIndex + direction
-      if (!closures || next < 0 || next >= closures.length) return prev
-      const sections = [...prev.sections]
-      sections[sectionIndex] = { ...section, closures: arrayMove([...closures], closureIndex, next) }
-      return { ...prev, sections }
-    }, true)
-  }
-
   const updateSection = (index: number, section: Section) => {
     updateState((prev) => {
       const newSections = [...prev.sections]
@@ -558,16 +446,6 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
       return { ...prev, sections }
     }, true)
   }
-  const changeClosures = (sectionIndex: number, change: (closures: Closure[]) => Closure[]) => {
-    updateState((prev) => {
-      const section = prev.sections[sectionIndex]
-      if (!section) return prev
-      const sections = [...prev.sections]
-      sections[sectionIndex] = { ...section, closures: change([...(section.closures ?? [])]) }
-      return { ...prev, sections }
-    }, true)
-  }
-
   const addCard = (sectionIndex: number, cardType: Card['type']) => {
     const newCard: Card = (() => {
       switch (cardType) {
@@ -665,119 +543,6 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
         setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
       },
     })
-  }
-
-  const addClosure = (sectionIndex: number) => {
-    // A new closure enters the draft only when it is saved.
-    setEditingClosure({
-      sectionIndex,
-      closureIndex: sections[sectionIndex]?.closures?.length ?? 0,
-      closure: { date: '', reason: '' },
-      isNew: true,
-    })
-  }
-
-  const editClosure = (sectionIndex: number, closureIndex: number) => {
-    const section = sections[sectionIndex]
-    const closure = section.closures?.[closureIndex]
-    if (closure) {
-      setEditingClosure({ sectionIndex, closureIndex, closure, isNew: false })
-    }
-  }
-
-  const saveClosure = (closure: Closure) => {
-    if (!editingClosure) return
-    const { sectionIndex, closureIndex, isNew } = editingClosure
-    changeClosures(sectionIndex, (closures) => {
-      if (isNew) closures.push(closure)
-      else closures[closureIndex] = closure
-      return closures
-    })
-    setEditingClosure(null)
-  }
-
-  const deleteClosure = () => {
-    if (!editingClosure) return
-    const { sectionIndex, closureIndex, isNew } = editingClosure
-    if (!isNew) changeClosures(sectionIndex, (closures) => closures.filter((_, index) => index !== closureIndex))
-    setEditingClosure(null)
-  }
-
-  const removeClosure = (sectionIndex: number, closureIndex: number) => {
-    setConfirmModal({
-      isOpen: true,
-      title: 'Remove closure',
-      message: 'Remove this closure from the newsletter? You can use Undo to restore it.',
-      variant: 'danger',
-      onConfirm: () => {
-        changeClosures(sectionIndex, (closures) => closures.filter((_, index) => index !== closureIndex))
-        setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: () => {} })
-      },
-    })
-  }
-
-  // Handle closure drag end
-  const handleClosureDragEnd = (event: DragEndEvent, sectionIndex: number) => {
-    const { active, over } = event
-
-    if (!over || active.id === over.id) {
-      return
-    }
-
-    const activeId = String(active.id)
-    const overId = String(over.id)
-
-    // Extract indices from IDs (format: "closure-{sectionIndex}-{closureIndex}")
-    const activeMatch = activeId.match(/closure-(\d+)-(\d+)/)
-    const overMatch = overId.match(/closure-(\d+)-(\d+)/)
-
-    if (!activeMatch || !overMatch) {
-      return
-    }
-
-    const activeSectionIndex = parseInt(activeMatch[1], 10)
-    const activeClosureIndex = parseInt(activeMatch[2], 10)
-    const overSectionIndex = parseInt(overMatch[1], 10)
-    const overClosureIndex = parseInt(overMatch[2], 10)
-
-    // Only proceed if both closures are in the same section
-    if (activeSectionIndex !== overSectionIndex || activeSectionIndex !== sectionIndex) {
-      return
-    }
-
-    // Use the state updater function to get the latest state
-    updateState((prev) => {
-      const newSections = [...prev.sections]
-      const section = newSections[sectionIndex]
-
-      if (!section || !section.closures || section.closures.length === 0) {
-        return prev
-      }
-
-      // Ensure indices are valid
-      if (
-        activeClosureIndex < 0 ||
-        activeClosureIndex >= section.closures.length ||
-        overClosureIndex < 0 ||
-        overClosureIndex >= section.closures.length
-      ) {
-        return prev
-      }
-
-      // Create a new array with reordered closures
-      const newClosures = arrayMove([...section.closures], activeClosureIndex, overClosureIndex)
-
-      // Update the section with the new closures array
-      newSections[sectionIndex] = {
-        ...section,
-        closures: newClosures,
-      }
-
-      return {
-        ...prev,
-        sections: newSections,
-      }
-    }, true)
   }
 
   // Handle card drag end
@@ -885,66 +650,8 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
                     />
                   </div>
 
-                  {/* Closures List - Draggable */}
-                  {section.key === 'closures' && (
-                    <div className="mt-3">
-                      <div className="text-xs font-medium text-wsu-text-dark mb-2">
-                        Closures ({section.closures?.length || 0})
-                      </div>
-                      {section.closures && section.closures.length > 0 ? (
-                        <DndContext
-                          id={`slate-closures-${sectionIndex}`}
-                          sensors={sensors}
-                          collisionDetection={closestCenter}
-                          onDragEnd={(event) => handleClosureDragEnd(event, sectionIndex)}
-                        >
-                          <SortableContext
-                            items={section.closures.map((_, index) => `closure-${sectionIndex}-${index}`)}
-                            strategy={verticalListSortingStrategy}
-                          >
-                            <div className="space-y-2">
-                              {section.closures.map((closure, closureIndex) => {
-                                const closureKey = `${section.key || sectionIndex}-closure-${closureIndex}-${closure.date || ''}`
-                                return (
-                                  <SortableClosureItem
-                                    key={closureKey}
-                                    closure={closure}
-                                    closureIndex={closureIndex}
-                                    closureCount={section.closures?.length ?? 0}
-                                    sectionIndex={sectionIndex}
-                                    onMove={moveClosure}
-                                    onEdit={editClosure}
-                                    onRemove={removeClosure}
-                                  />
-                                )
-                              })}
-                            </div>
-                          </SortableContext>
-                        </DndContext>
-                      ) : (
-                        <p className="text-xs text-wsu-text-muted mb-2">
-                          No closures added yet. Click &quot;Add Closure&quot; to add one.
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Add Closure Button - Only show for closures sections */}
-                  {section.key === 'closures' && (
-                    <div className="mt-3">
-                      <div className="text-xs font-medium text-wsu-text-dark mb-2">Add Closure</div>
-                      <button
-                        onClick={() => addClosure(sectionIndex)}
-                        className="inline-flex min-h-11 items-center justify-center px-3 py-2 text-sm font-medium text-wsu-crimson border border-wsu-crimson rounded-md hover:bg-wsu-crimson/10 transition-colors flex items-center gap-1"
-                      >
-                        <Plus className="w-3 h-3" />
-                        Add Closure
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Cards List - Draggable */}
-                  {section.key !== 'closures' && section.cards && section.cards.length > 0 && (
+                  {/* Stories list */}
+                  {section.cards && section.cards.length > 0 && (
                     <div className="mt-3">
                       <div className="text-xs font-medium text-wsu-text-dark mb-2">Stories ({section.cards.length})</div>
                       <DndContext
@@ -981,9 +688,7 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
                     </div>
                   )}
 
-                  {/* Add Card Button - Only show for non-closures sections */}
-                  {section.key !== 'closures' && (
-                    <div className="mt-3">
+                  <div className="mt-3">
                       <div className="text-xs font-medium text-wsu-text-dark mb-2">Add a story</div>
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -1018,7 +723,6 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
                         </button>
                       </div>
                     </div>
-                  )}
                 </div>
               </SortableSectionItem>
             ))}
@@ -1049,19 +753,6 @@ export default function SectionsEditor({ state, updateState, onAssist, storyRequ
             onSave={saveCard}
             onCancel={() => setEditingCard(null)}
             onDelete={editingCard.isNew ? undefined : deleteCard}
-          />
-        </div>
-      )}
-
-      {/* Closure Editor Modal */}
-      {editingClosure && (
-        <div data-preview-target={`section-${editingClosure.sectionIndex}`}>
-          <ClosureEditor
-            closure={editingClosure.closure}
-            isNew={editingClosure.isNew}
-            onSave={saveClosure}
-            onCancel={() => setEditingClosure(null)}
-            onDelete={editingClosure.isNew ? undefined : deleteClosure}
           />
         </div>
       )}
