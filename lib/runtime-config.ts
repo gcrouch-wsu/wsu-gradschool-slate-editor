@@ -57,7 +57,9 @@ export function publicOrigin(request?: Request): string {
 }
 
 export function databaseUrl(): string {
-  const url = process.env.DATABASE_URL?.trim()
+  // Preview deployments can receive a separate database branch. SLATE_DATABASE_URL
+  // keeps sign-in and drafts on the shared staff database.
+  const url = (process.env.SLATE_DATABASE_URL || process.env.DATABASE_URL)?.trim()
   if (!url) throw new Error('DATABASE_URL is required.')
   return url
 }
